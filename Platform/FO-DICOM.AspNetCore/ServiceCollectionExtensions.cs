@@ -2,6 +2,7 @@
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
+using FellowOakDicom.AspNetCore.DicomWebServer;
 using FellowOakDicom.AspNetCore.Server;
 using FellowOakDicom.Network;
 using Microsoft.Extensions.Configuration;
@@ -63,6 +64,19 @@ namespace FellowOakDicom.AspNetCore
                 optionsAction(dicomService.Options);
                 return dicomService;
             });
+
+        #endregion
+
+        #region Add DicomWebServer
+
+        public static IServiceCollection AddDicomWebServer<T>(this IServiceCollection services) where T : DicomWebServer.DicomWebServer
+        {
+            services.AddControllers();
+            return services
+                .UseFellowOakDicom()
+                .AddSingleton<IDicomWebServer, T>(); //Should crash if there's already an implementation added!
+            //TODO PJ: add stuff like Endpoint mapper to DicomWebServer request
+        }
 
         #endregion
     }
