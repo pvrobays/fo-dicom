@@ -3,6 +3,7 @@ using FellowOakDicom.Network;
 using FellowOakDicom.Serialization;
 using Microsoft.AspNetCore.Http;
 using System;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,6 +18,13 @@ namespace FellowOakDicom.AspNetCore.DicomWebServer
     //TODO PJ: rename to DicomWebService to be in line with DIMSE implementation?
     public abstract class DicomWebServer : IDicomWebServer
     {
+        
+        private static readonly string[] _reservedQidoParameters = {
+            "fuzzymatching",
+            "limit",
+            "offset"
+        };
+        
         public async Task HandleQidoStudiesRequestAsync(HttpContext context)
         {
             var cancellationToken = context.RequestAborted;
@@ -136,32 +144,70 @@ namespace FellowOakDicom.AspNetCore.DicomWebServer
             var dataset = dicomRequest.Dataset;
             foreach (var (key, stringValues) in httpRequest.Query)
             {
+                if (_reservedQidoParameters.Contains(key))
+                {
+                    continue;
+                }
+
+                if (key.Equals("includefield", StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (string value in stringValues)
+                    {
+                        if (value.Contains('.'))
+                        {
+                            //TODO PJ: support sequences!
+                            throw new InvalidOperationException("Sequences are not supported. includefield = " + value);
+                        }
+                        
+                        if (!DicomTag.TryParseByKeywordOrTag(value, out var includeTag))
+                        {
+                            //TODO PJ: Log that the key could not be mapped to a DICOM tag
+                            //TODO PJ: depending on a setting, throw or just continue?
+                            throw new InvalidOperationException($"Could not map includefield '{key}' to a DICOM tag");
+                            // continue;
+                        }
+                        if (includeTag.DictionaryEntry.ValueRepresentations.Contains(DicomVR.SQ))
+                        {
+                            //TODO PJ: support returning sequences!
+                            throw new InvalidOperationException($"Sequences are not supported. includefield = {includeTag.DictionaryEntry.Keyword} {includeTag.ToString()}");
+                        }
+                        dataset.AddOrUpdate(includeTag, string.Empty);
+                    }
+                    
+                    continue;
+                }
+                
+                //TODO PJ: filter non-queryable tags?
+                
                 //TODO PJ: move this to its own class `QueryToDicomDatasetMapper`?
                 //try to map the key to a DICOM tag
-                //TODO PJ: support sequences!
-                var dicomTag = ParseTag(key); //TODO PJ: try parse?
 
-                //TODO PJ: filter non-queryable tags?
+                if (key.Contains('.'))
+                {
+                    //TODO PJ: support sequences!
+                    throw new InvalidOperationException("Sequences are not supported. query parameter = " + key);
+                }
+                
+                if (!DicomTag.TryParseByKeywordOrTag(key, out var dicomTag))
+                {
+                    //TODO PJ: Log that the key could not be mapped to a DICOM tag
+                    //TODO PJ: depending on a setting, throw or just continue?
+                    throw new InvalidOperationException($"Could not map query parameter '{key}' to a DICOM tag");
+                    // continue;
+                }
 
                 //map the value to a DICOM value linked to that DICOM tag
-                dataset.AddOrUpdate(dicomTag,
-                    stringValues.ToArray()); //TODO PJ: check that every value works as a string?
+                if (dicomTag.DictionaryEntry.ValueRepresentations.Contains(DicomVR.SQ))
+                {
+                    //TODO PJ: support returning sequences!
+                    throw new InvalidOperationException($"Sequences are not supported. query parameter = {dicomTag.DictionaryEntry.Keyword} {dicomTag.ToString()}");
+                }
+                dataset.AddOrUpdate(dicomTag, stringValues.ToArray()); //TODO PJ: check that every value works as a string?
+                //TODO PJ: add study date ranges?
+                //TODO PJ: add ability for multiple values (e.g. study instance UID list with csv)
             }
 
             return dicomRequest;
-        }
-
-        private static DicomTag ParseTag(string tagString)
-        {
-            if (Regex.IsMatch(tagString, @"\A\b[0-9a-fA-F]+\b\Z"))
-            {
-                var group = Convert.ToUInt16(tagString[..4], 16);
-                var element = Convert.ToUInt16(tagString[4..], 16);
-                var tag = new DicomTag(group, element);
-                return tag;
-            }
-
-            return DicomDictionary.Default[tagString];
         }
 
         private static bool TryParseInt(IQueryCollection query, string key, out int o)

@@ -1,4 +1,5 @@
 ﻿using FellowOakDicom.Network;
+using System;
 
 namespace FellowOakDicom.DicomWeb
 {
@@ -11,8 +12,61 @@ namespace FellowOakDicom.DicomWeb
             Dataset = new DicomDataset().NotValidated();
             Level = level;
             Options = options ?? DicomQidoRequestOptions.Default;
+            AddMinimumRequiredResponseTags();
         }
-        
+
+        private void AddMinimumRequiredResponseTags()
+        {
+            switch (Level)
+            {
+                case DicomQueryRetrieveLevel.Patient:
+                    return; //not supported
+                case DicomQueryRetrieveLevel.Study:
+                    AddIfNotExists(DicomTag.StudyDate);
+                    AddIfNotExists(DicomTag.StudyTime);
+                    AddIfNotExists(DicomTag.AccessionNumber);
+                    AddIfNotExists(DicomTag.InstanceAvailability);
+                    AddIfNotExists(DicomTag.ModalitiesInStudy);
+                    AddIfNotExists(DicomTag.ReferringPhysicianName);
+                    AddIfNotExists(DicomTag.PatientName);
+                    AddIfNotExists(DicomTag.PatientID);
+                    AddIfNotExists(DicomTag.PatientBirthDate);
+                    AddIfNotExists(DicomTag.PatientSex);
+                    AddIfNotExists(DicomTag.StudyInstanceUID);
+                    AddIfNotExists(DicomTag.StudyID);
+                    AddIfNotExists(DicomTag.NumberOfStudyRelatedSeries);
+                    AddIfNotExists(DicomTag.NumberOfStudyRelatedInstances);
+                    break;
+                case DicomQueryRetrieveLevel.Series:
+                    AddIfNotExists(DicomTag.Modality);
+                    AddIfNotExists(DicomTag.SeriesDescription);
+                    AddIfNotExists(DicomTag.SeriesInstanceUID);
+                    AddIfNotExists(DicomTag.SeriesNumber);
+                    AddIfNotExists(DicomTag.NumberOfSeriesRelatedInstances);
+                    break;
+                case DicomQueryRetrieveLevel.Image:
+                    AddIfNotExists(DicomTag.SOPClassUID);
+                    AddIfNotExists(DicomTag.SOPInstanceUID);
+                    AddIfNotExists(DicomTag.InstanceAvailability);
+                    AddIfNotExists(DicomTag.InstanceNumber);
+                    break;
+                case DicomQueryRetrieveLevel.Worklist:
+                    return; //not supported
+                case DicomQueryRetrieveLevel.NotApplicable:
+                    return; //not supported
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
+        }
+
+        private void AddIfNotExists(DicomTag dicomTag)
+        {
+            if (!Dataset.Contains(dicomTag))
+            {
+                Dataset.Add(dicomTag, string.Empty);
+            }
+        }
+
         #endregion
         
         #region PROPERTIES
