@@ -32,7 +32,7 @@ namespace FellowOakDicom.DicomWeb
         
         /// <summary>
         /// Whether the server reached the maximum number of results, and the results are incomplete
-        /// If thje server reached the maximum number of results, will return Warning header:
+        /// If the server reached the maximum number of results, will return Warning header:
         /// Warning: 299 {SERVICE}: "The number of results exceeded the maximum supported by the server. Additional results can be requested."
         /// </summary>
         public bool IsServerMaximumResultsReached { get; set; }

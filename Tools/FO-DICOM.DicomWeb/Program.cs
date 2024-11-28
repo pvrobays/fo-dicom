@@ -5,6 +5,13 @@ using Microsoft.Extensions.Hosting;
 
 namespace FellowOakDicom.DicomWeb
 {
+    /**
+     * Test Urls:
+     * https://localhost:7215/dicomweb/studies
+     * https://localhost:7215/dicomweb/studies?PatientID=11235813&StudyDate=20130509
+     * https://localhost:7215/dicomweb/studies?PatientID=11235813&includefield=00081048,00081049,00081060
+     */
+    
     public static class Program
     {
         public static void Main(string[] args)

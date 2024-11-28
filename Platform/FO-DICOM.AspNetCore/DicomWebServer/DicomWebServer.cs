@@ -2,9 +2,9 @@
 using FellowOakDicom.Network;
 using FellowOakDicom.Serialization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Primitives;
 using System;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -142,7 +142,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebServer
 
             //TODO PJ: map the DICOM Dataset from the query parameters and level
             var dataset = dicomRequest.Dataset;
-            foreach (var (key, stringValues) in httpRequest.Query)
+            foreach ((string key, StringValues stringValues) in httpRequest.Query)
             {
                 if (_reservedQidoParameters.Contains(key))
                 {
