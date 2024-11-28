@@ -151,7 +151,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebServer
 
                 if (key.Equals("includefield", StringComparison.OrdinalIgnoreCase))
                 {
-                    foreach (string value in stringValues)
+                    foreach (string value in stringValues.SelectMany(sv => sv.Split(',')).ToList())
                     {
                         if (value.Contains('.'))
                         {
