@@ -2,6 +2,8 @@ using FellowOakDicom.DicomWeb;
 using FellowOakDicom.Network;
 using FellowOakDicom.Serialization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,6 +41,20 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
     public abstract class DicomWebService : IDicomWebService
     {
+        private readonly ILogger _logger;
+
+        /// <summary>
+        /// Initializes the service with an optional <see cref="ILoggerFactory"/>.
+        /// When <paramref name="loggerFactory"/> is <c>null</c> (e.g. in unit tests that use a
+        /// no-arg constructor on a concrete subclass) a <see cref="NullLoggerFactory"/> is used
+        /// so that no logging occurs but no <see cref="NullReferenceException"/> is thrown.
+        /// </summary>
+        protected DicomWebService(ILoggerFactory loggerFactory = null)
+        {
+            _logger = (loggerFactory ?? NullLoggerFactory.Instance)
+                .CreateLogger(GetType().FullName);
+        }
+
         /// <summary>
         /// Whether the DICOM JSON response should use DICOM keywords (e.g. <c>"PatientName"</c>)
         /// as JSON property names instead of the standard eight-character uppercase hexadecimal
@@ -153,6 +169,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         {
             if (!(this is IDicomQidoProvider thisAsQidoProvider))
             {
+                _logger.LogDebug("QIDO {Level} request received but no IDicomQidoProvider is implemented — returning 501", level);
                 return new DicomQidoNotImplementedResponse();
             }
 
@@ -177,7 +194,8 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             }
             catch (Exception e)
             {
-                //TODO PJ: Log exception
+                _logger.LogWarning(e, "QIDO {Level} request rejected: failed to parse query string — {Reason}",
+                    level, e.Message);
                 return new DicomQidoBadRequestResponse(e.Message);
             }
 
@@ -187,7 +205,8 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             }
             catch (Exception e)
             {
-                //TODO PJ: Log exception
+                _logger.LogError(e, "QIDO {Level} request failed: unhandled exception in OnQidoRequestAsync",
+                    level);
                 return new DicomQidoUnavailableResponse(e.Message);
             }
         }
