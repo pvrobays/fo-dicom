@@ -18,13 +18,31 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
     public abstract class DicomWebService : IDicomWebService
     {
-        
+
         private static readonly string[] _reservedQidoParameters = {
             "fuzzymatching",
             "limit",
             "offset"
         };
-        
+
+        /// <summary>
+        /// Whether the DICOM JSON response should use DICOM keywords (e.g. <c>"PatientName"</c>)
+        /// as JSON property names instead of the standard eight-character uppercase hexadecimal
+        /// tag representation (e.g. <c>"00100010"</c>).
+        /// <para>
+        /// The DICOM standard (PS3.18 Section F.2.2) mandates hex tag keys.
+        /// Override this property and return <c>true</c> only for non-standard/debug scenarios.
+        /// Defaults to <c>false</c> (standard-compliant hex keys).
+        /// </para>
+        /// </summary>
+        protected virtual bool WriteTagsAsKeywords => false;
+
+        /// <summary>
+        /// Whether the DICOM JSON response body should be pretty-printed with indentation.
+        /// Defaults to <c>false</c> (compact JSON, suitable for API responses).
+        /// </summary>
+        protected virtual bool FormatJsonIndented => false;
+
         public async Task HandleQidoStudiesRequestAsync(HttpContext context)
         {
             var cancellationToken = context.RequestAborted;
@@ -34,7 +52,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             await ExecuteQidoResponseOnHttpContext(context, response, cancellationToken);
         }
 
-        private static async Task ExecuteQidoResponseOnHttpContext(HttpContext context, IDicomQidoResponse response,
+        private async Task ExecuteQidoResponseOnHttpContext(HttpContext context, IDicomQidoResponse response,
             CancellationToken cancellationToken)
         {
             switch (response)
@@ -42,11 +60,11 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 //Success
                 case DicomQidoSuccessResponse successResponse:
                     context.Response.StatusCode = StatusCodes.Status200OK;
-                    context.Response.ContentType = "application/json"; //TODO PJ: support XML? 
+                    context.Response.ContentType = "application/json"; //TODO PJ: support XML?
                     await context.Response.WriteAsync(DicomJson.ConvertDicomToJson(
                         successResponse.Results,
-                        true,
-                        true
+                        WriteTagsAsKeywords,
+                        FormatJsonIndented
                     ), cancellationToken: cancellationToken);
                     break;
 

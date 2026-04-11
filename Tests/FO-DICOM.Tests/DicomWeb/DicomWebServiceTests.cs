@@ -65,6 +65,34 @@ namespace FellowOakDicom.Tests.DicomWeb
         {
         }
 
+        /// <summary>
+        /// A DicomWebService that overrides the JSON formatting properties,
+        /// allowing tests to verify the configurable output behaviour.
+        /// </summary>
+        private class ConfigurableDicomWebService : DicomWebService, IDicomQidoProvider
+        {
+            private readonly System.Func<DicomQidoRequest, CancellationToken, Task<IDicomQidoResponse>> _handler;
+
+            public ConfigurableDicomWebService(
+                System.Func<DicomQidoRequest, CancellationToken, Task<IDicomQidoResponse>> handler,
+                bool writeTagsAsKeywords = false,
+                bool formatJsonIndented = false)
+            {
+                _handler = handler;
+                WriteTagsAsKeywordsOverride = writeTagsAsKeywords;
+                FormatJsonIndentedOverride = formatJsonIndented;
+            }
+
+            private bool WriteTagsAsKeywordsOverride { get; }
+            private bool FormatJsonIndentedOverride { get; }
+
+            protected override bool WriteTagsAsKeywords => WriteTagsAsKeywordsOverride;
+            protected override bool FormatJsonIndented => FormatJsonIndentedOverride;
+
+            public Task<IDicomQidoResponse> OnQidoRequestAsync(DicomQidoRequest request, CancellationToken cancellationToken)
+                => _handler(request, cancellationToken);
+        }
+
         private static async Task<string> ReadResponseBodyAsync(HttpContext context)
         {
             context.Response.Body.Seek(0, SeekOrigin.Begin);
@@ -1183,6 +1211,7 @@ namespace FellowOakDicom.Tests.DicomWeb
 
         #region Request level
 
+
         [FactForNetCore]
         public async Task HandleQidoStudiesRequest_RequestIsStudyLevel()
         {
@@ -1199,6 +1228,94 @@ namespace FellowOakDicom.Tests.DicomWeb
 
             Assert.NotNull(capturedRequest);
             Assert.Equal(DicomQueryRetrieveLevel.Study, capturedRequest.Level);
+        }
+
+        #endregion
+
+        #region JSON output formatting — WriteTagsAsKeywords and FormatJsonIndented
+
+        private static DicomQidoSuccessResponse MakeSuccessResponseWithOneDataset()
+        {
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.PatientID, "12345");
+            var response = new DicomQidoSuccessResponse();
+            response.AddResult(dataset);
+            return response;
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_DefaultService_JsonKeysAreHexTags()
+        {
+            // Default: WriteTagsAsKeywords=false → standard-compliant 8-char hex keys per PS3.18 F.2.2
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(MakeSuccessResponseWithOneDataset()));
+
+            var context = BuildHttpContext();
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var body = await ReadResponseBodyAsync(context);
+            // PatientID = (0010,0020) → "00100020"
+            Assert.Contains("\"00100020\"", body);
+            Assert.DoesNotContain("\"PatientID\"", body);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_WriteTagsAsKeywordsTrue_JsonKeysAreKeywords()
+        {
+            var service = new ConfigurableDicomWebService(
+                (req, ct) => Task.FromResult<IDicomQidoResponse>(MakeSuccessResponseWithOneDataset()),
+                writeTagsAsKeywords: true);
+
+            var context = BuildHttpContext();
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var body = await ReadResponseBodyAsync(context);
+            Assert.Contains("\"PatientID\"", body);
+            Assert.DoesNotContain("\"00100020\"", body);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_DefaultService_JsonIsCompact()
+        {
+            // Default: FormatJsonIndented=false → no newlines in the JSON body
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(MakeSuccessResponseWithOneDataset()));
+
+            var context = BuildHttpContext();
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var body = await ReadResponseBodyAsync(context);
+            Assert.DoesNotContain("\n", body);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_FormatJsonIndentedTrue_JsonContainsNewlines()
+        {
+            var service = new ConfigurableDicomWebService(
+                (req, ct) => Task.FromResult<IDicomQidoResponse>(MakeSuccessResponseWithOneDataset()),
+                formatJsonIndented: true);
+
+            var context = BuildHttpContext();
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var body = await ReadResponseBodyAsync(context);
+            Assert.Contains("\n", body);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_WriteTagsAsKeywordsAndIndented_BothApplied()
+        {
+            var service = new ConfigurableDicomWebService(
+                (req, ct) => Task.FromResult<IDicomQidoResponse>(MakeSuccessResponseWithOneDataset()),
+                writeTagsAsKeywords: true,
+                formatJsonIndented: true);
+
+            var context = BuildHttpContext();
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var body = await ReadResponseBodyAsync(context);
+            Assert.Contains("\"PatientID\"", body);
+            Assert.Contains("\n", body);
         }
 
         #endregion
