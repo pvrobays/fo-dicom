@@ -250,7 +250,6 @@ namespace FellowOakDicom
         /// <param name="tag">the out parameter which represents the DicomTag. Will be null if the parsing failed</param>
         /// <returns>Whether the parsing was successful or not</returns>
         public static bool TryParseByKeywordOrTag(string tagOrKeywordString, out DicomTag tag) {
-            //TODO PJ: also allow for '(gggg,eeee)' format?
             if (string.IsNullOrEmpty(tagOrKeywordString))
             {
                 tag = null;

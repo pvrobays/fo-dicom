@@ -4,6 +4,7 @@ using FellowOakDicom.Serialization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -154,8 +155,10 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     {
                         if (value.Contains('.'))
                         {
-                            //TODO PJ: support sequences!
-                            throw new InvalidOperationException("Sequences are not supported. includefield = " + value);
+                            // Dot notation: e.g. "00081115.00080060" or "OtherPatientIDsSequence.PatientID"
+                            var path = ParseAttributePath(value);
+                            AddNestedAttribute(dataset, path, new[] { string.Empty });
+                            continue;
                         }
                         
                         if (!DicomTag.TryParseByKeywordOrTag(value, out var includeTag))
@@ -167,8 +170,9 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                         }
                         if (includeTag.DictionaryEntry.ValueRepresentations.Contains(DicomVR.SQ))
                         {
-                            //TODO PJ: support returning sequences!
-                            throw new InvalidOperationException($"Sequences are not supported. includefield = {includeTag.DictionaryEntry.Keyword} {includeTag.ToString()}");
+                            // SQ-typed tag without dot notation: add an empty sequence to the dataset
+                            dataset.AddOrUpdate(new DicomSequence(includeTag));
+                            continue;
                         }
                         dataset.AddOrUpdate(includeTag, string.Empty);
                     }
@@ -183,8 +187,10 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
                 if (key.Contains('.'))
                 {
-                    //TODO PJ: support sequences!
-                    throw new InvalidOperationException("Sequences are not supported. query parameter = " + key);
+                    // Dot notation: e.g. "00081115.00080060=CT" or "OtherPatientIDsSequence.PatientID=11235813"
+                    var path = ParseAttributePath(key);
+                    AddNestedAttribute(dataset, path, stringValues.ToArray());
+                    continue;
                 }
                 
                 if (!DicomTag.TryParseByKeywordOrTag(key, out var dicomTag))
@@ -198,8 +204,9 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 //map the value to a DICOM value linked to that DICOM tag
                 if (dicomTag.DictionaryEntry.ValueRepresentations.Contains(DicomVR.SQ))
                 {
-                    //TODO PJ: support returning sequences!
-                    throw new InvalidOperationException($"Sequences are not supported. query parameter = {dicomTag.DictionaryEntry.Keyword} {dicomTag.ToString()}");
+                    // Bare SQ-typed tag without dot notation: treat as include field (add empty sequence)
+                    dataset.AddOrUpdate(new DicomSequence(dicomTag));
+                    continue;
                 }
                 dataset.AddOrUpdate(dicomTag, stringValues.ToArray()); //TODO PJ: check that every value works as a string?
                 //TODO PJ: add study date ranges?
@@ -207,6 +214,94 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             }
 
             return dicomRequest;
+        }
+
+        /// <summary>
+        /// Parses a dot-notation attribute path (e.g. "00081115.00080060" or
+        /// "OtherPatientIDsSequence.PatientID") into an ordered array of DicomTags.
+        /// Each segment can be a hex tag (8 hex digits) or a keyword.
+        /// All segments except the last must be sequence (SQ) tags.
+        /// </summary>
+        private static DicomTag[] ParseAttributePath(string attributePath)
+        {
+            var segments = attributePath.Split('.');
+            if (segments.Length < 2)
+            {
+                throw new InvalidOperationException(
+                    $"Attribute path '{attributePath}' must contain at least two segments separated by '.'");
+            }
+
+            var tags = new DicomTag[segments.Length];
+            for (int i = 0; i < segments.Length; i++)
+            {
+                if (!DicomTag.TryParseByKeywordOrTag(segments[i], out var tag))
+                {
+                    throw new InvalidOperationException(
+                        $"Could not parse segment '{segments[i]}' in attribute path '{attributePath}' as a DICOM tag");
+                }
+
+                // All segments except the last must be sequence tags
+                if (i < segments.Length - 1 && !tag.DictionaryEntry.ValueRepresentations.Contains(DicomVR.SQ))
+                {
+                    throw new InvalidOperationException(
+                        $"Segment '{segments[i]}' ({tag.DictionaryEntry.Keyword}) in attribute path '{attributePath}' is not a sequence tag");
+                }
+
+                tags[i] = tag;
+            }
+
+            return tags;
+        }
+
+        /// <summary>
+        /// Adds a nested attribute to the dataset following a sequence path.
+        /// For a path [SeqTagA, SeqTagB, LeafTag] with values ["CT"], this builds:
+        ///   SeqTagA -> DicomSequence containing one item ->
+        ///     SeqTagB -> DicomSequence containing one item ->
+        ///       LeafTag = "CT"
+        /// If a sequence already exists at any level, the leaf attribute is merged into
+        /// the first existing sequence item rather than creating a duplicate sequence.
+        /// </summary>
+        private static void AddNestedAttribute(DicomDataset dataset, DicomTag[] path, string[] values)
+        {
+            // Navigate/create the sequence chain for all tags except the last (the leaf)
+            var currentDataset = dataset;
+            for (int i = 0; i < path.Length - 1; i++)
+            {
+                var seqTag = path[i];
+                DicomSequence sequence;
+                if (currentDataset.TryGetSequence(seqTag, out var existingSequence) && existingSequence.Items.Count > 0)
+                {
+                    // Reuse the first item of the existing sequence
+                    sequence = existingSequence;
+                }
+                else
+                {
+                    // Create a new sequence with one empty item
+                    sequence = new DicomSequence(seqTag, new DicomDataset().NotValidated());
+                    currentDataset.AddOrUpdate(sequence);
+                }
+
+                currentDataset = sequence.Items[0];
+            }
+
+            // Add the leaf tag with its value(s)
+            var leafTag = path[path.Length - 1];
+            if (leafTag.DictionaryEntry.ValueRepresentations.Contains(DicomVR.SQ))
+            {
+                // Leaf is itself a sequence: add an empty sequence
+                currentDataset.AddOrUpdate(new DicomSequence(leafTag));
+            }
+            else if (values.Length == 1)
+            {
+                // Single value (or empty string for include fields) —
+                // use the single-string overload to match the non-sequence code path
+                currentDataset.AddOrUpdate(leafTag, values[0]);
+            }
+            else
+            {
+                currentDataset.AddOrUpdate(leafTag, values);
+            }
         }
 
         private static bool TryParseInt(IQueryCollection query, string key, out int o)
