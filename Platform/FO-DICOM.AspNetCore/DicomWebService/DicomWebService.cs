@@ -13,7 +13,31 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 {
     public interface IDicomWebService
     {
+        /// <summary>Handles a QIDO-RS All Studies search (<c>GET …/studies</c>).</summary>
         Task HandleQidoStudiesRequestAsync(HttpContext context);
+
+        /// <summary>
+        /// Handles a QIDO-RS Series search.
+        /// <list type="bullet">
+        ///   <item><c>GET …/series</c> — all series (no route values needed)</item>
+        ///   <item><c>GET …/studies/{studyInstanceUID}/series</c> — series within a study</item>
+        /// </list>
+        /// The study scope is extracted automatically from the <c>studyInstanceUID</c> route value
+        /// when present in <see cref="HttpRequest.RouteValues"/>.
+        /// </summary>
+        Task HandleQidoSeriesRequestAsync(HttpContext context);
+
+        /// <summary>
+        /// Handles a QIDO-RS Instances search.
+        /// <list type="bullet">
+        ///   <item><c>GET …/instances</c> — all instances</item>
+        ///   <item><c>GET …/studies/{studyInstanceUID}/instances</c> — instances within a study</item>
+        ///   <item><c>GET …/studies/{studyInstanceUID}/series/{seriesInstanceUID}/instances</c> — instances within a series</item>
+        /// </list>
+        /// The study and series scope are extracted automatically from the route values
+        /// <c>studyInstanceUID</c> and <c>seriesInstanceUID</c> when present.
+        /// </summary>
+        Task HandleQidoInstancesRequestAsync(HttpContext context);
     }
 
     public abstract class DicomWebService : IDicomWebService
@@ -48,6 +72,24 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             var cancellationToken = context.RequestAborted;
 
             var response = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Study, context, cancellationToken);
+
+            await ExecuteQidoResponseOnHttpContext(context, response, cancellationToken);
+        }
+
+        public async Task HandleQidoSeriesRequestAsync(HttpContext context)
+        {
+            var cancellationToken = context.RequestAborted;
+
+            var response = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Series, context, cancellationToken);
+
+            await ExecuteQidoResponseOnHttpContext(context, response, cancellationToken);
+        }
+
+        public async Task HandleQidoInstancesRequestAsync(HttpContext context)
+        {
+            var cancellationToken = context.RequestAborted;
+
+            var response = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Image, context, cancellationToken);
 
             await ExecuteQidoResponseOnHttpContext(context, response, cancellationToken);
         }
@@ -118,6 +160,20 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             {
                 //Map the request
                 request = MapDicomQidoRequest(level, context.Request);
+
+                // Inject route-scoped UIDs as match constraints.
+                // These come from URL path templates (e.g. /studies/{studyInstanceUID}/series)
+                // and take precedence over any query-string values for the same tag.
+                if (context.Request.RouteValues.TryGetValue("studyInstanceUID", out var studyUid)
+                    && studyUid is string studyUidString)
+                {
+                    request.Dataset.AddOrUpdate(DicomTag.StudyInstanceUID, studyUidString);
+                }
+                if (context.Request.RouteValues.TryGetValue("seriesInstanceUID", out var seriesUid)
+                    && seriesUid is string seriesUidString)
+                {
+                    request.Dataset.AddOrUpdate(DicomTag.SeriesInstanceUID, seriesUidString);
+                }
             }
             catch (Exception e)
             {

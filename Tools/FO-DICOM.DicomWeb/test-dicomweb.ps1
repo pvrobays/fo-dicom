@@ -225,6 +225,95 @@ Run-Test -Label "25. Multi-UID list (comma-separated)" `
     -Description "Matches studies whose UID is any of the three specified UIDs (PS3.4 C.2.2.2.2)" `
     -MaxBodyChars 800
 
+# ===========================================================================
+#  SERIES ENDPOINTS (PS3.18 Table 10.6.1-1)
+# ===========================================================================
+
+Write-Host "=============================================" -ForegroundColor Yellow
+Write-Host " Series Endpoint Tests" -ForegroundColor Yellow
+Write-Host "=============================================" -ForegroundColor Yellow
+Write-Host ""
+
+# Grab the first StudyInstanceUID from the all-studies response so we can
+# use it in scoped series / instance queries below.
+$studyUid = $null
+$seriesUid = $null
+try {
+    $allStudies = Invoke-WebRequest -Uri "$BaseUrl/studies" -SkipCertificateCheck -ErrorAction Stop
+    $studiesJson = $allStudies.Content | ConvertFrom-Json
+    # JSON keys are hex tags: 0020000D = StudyInstanceUID
+    $studyUid = $studiesJson[0]."0020000D".Value[0]
+}
+catch { }
+
+Run-Test -Label "26. All series (no scope, no filters)" `
+    -Url "$BaseUrl/series" `
+    -Description "PS3.18 Table 10.6.1-1: All series resource" `
+    -MaxBodyChars 800
+
+Run-Test -Label "27. All series filtered by Modality" `
+    -Url "$BaseUrl/series?Modality=CT" `
+    -Description "Series-level query with Modality=CT filter" `
+    -MaxBodyChars 800
+
+Run-Test -Label "28. Study's series (scoped)" `
+    -Url $(if ($studyUid) { "$BaseUrl/studies/$studyUid/series" } else { "$BaseUrl/studies/1.2.3/series" }) `
+    -Description "Series for a specific study (studyInstanceUID from route)" `
+    -MaxBodyChars 800
+
+Run-Test -Label "29. Study's series filtered by Modality" `
+    -Url $(if ($studyUid) { "$BaseUrl/studies/$studyUid/series?Modality=CT" } else { "$BaseUrl/studies/1.2.3/series?Modality=CT" }) `
+    -Description "Scoped series + Modality query param" `
+    -MaxBodyChars 800
+
+# ===========================================================================
+#  INSTANCE ENDPOINTS (PS3.18 Table 10.6.1-1)
+# ===========================================================================
+
+Write-Host "=============================================" -ForegroundColor Yellow
+Write-Host " Instance Endpoint Tests" -ForegroundColor Yellow
+Write-Host "=============================================" -ForegroundColor Yellow
+Write-Host ""
+
+# Grab the first SeriesInstanceUID from the all-series response.
+try {
+    $allSeries = Invoke-WebRequest -Uri "$BaseUrl/series" -SkipCertificateCheck -ErrorAction Stop
+    $seriesJson = $allSeries.Content | ConvertFrom-Json
+    # 0020000E = SeriesInstanceUID
+    $seriesUid = $seriesJson[0]."0020000E".Value[0]
+}
+catch { }
+
+Run-Test -Label "30. All instances (no scope, no filters)" `
+    -Url "$BaseUrl/instances" `
+    -Description "PS3.18 Table 10.6.1-1: All instances resource" `
+    -MaxBodyChars 800
+
+Run-Test -Label "31. All instances filtered by SOPClassUID" `
+    -Url "$BaseUrl/instances?SOPClassUID=1.2.840.10008.5.1.4.1.1.2" `
+    -Description "Instance-level query filtered by SOPClassUID (CT Image Storage)" `
+    -MaxBodyChars 800
+
+Run-Test -Label "32. Study's instances (scoped by study)" `
+    -Url $(if ($studyUid) { "$BaseUrl/studies/$studyUid/instances" } else { "$BaseUrl/studies/1.2.3/instances" }) `
+    -Description "Instances for a specific study (studyInstanceUID from route)" `
+    -MaxBodyChars 800
+
+Run-Test -Label "33. Study's series' instances (scoped by study + series)" `
+    -Url $(if ($studyUid -and $seriesUid) { "$BaseUrl/studies/$studyUid/series/$seriesUid/instances" } else { "$BaseUrl/studies/1.2.3/series/4.5.6/instances" }) `
+    -Description "Instances for a specific study+series (both UIDs from route)" `
+    -MaxBodyChars 800
+
+Run-Test -Label "34. Study's series' instances filtered by SOPClassUID" `
+    -Url $(if ($studyUid -and $seriesUid) { "$BaseUrl/studies/$studyUid/series/$seriesUid/instances?SOPClassUID=1.2.840.10008.5.1.4.1.1.2" } else { "$BaseUrl/studies/1.2.3/series/4.5.6/instances?SOPClassUID=1.2.840.10008.5.1.4.1.1.2" }) `
+    -Description "Scoped instance query with SOPClassUID filter" `
+    -MaxBodyChars 800
+
+Run-Test -Label "35. Instance pagination (limit=2, offset=0)" `
+    -Url "$BaseUrl/instances?limit=2&offset=0" `
+    -Description "Pagination on the all-instances endpoint" `
+    -MaxBodyChars 800
+
 Write-Host "=============================================" -ForegroundColor Yellow
 Write-Host " Done!" -ForegroundColor Yellow
 Write-Host "=============================================" -ForegroundColor Yellow

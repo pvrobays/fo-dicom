@@ -42,6 +42,24 @@ namespace FellowOakDicom.Tests.DicomWeb
         }
 
         /// <summary>
+        /// Builds a DefaultHttpContext with optional query string parameters and route values.
+        /// Route values simulate path parameters from URL templates such as
+        /// <c>/studies/{studyInstanceUID}/series</c>.
+        /// </summary>
+        private static DefaultHttpContext BuildHttpContext(
+            Dictionary<string, StringValues> queryParams,
+            Dictionary<string, string> routeValues)
+        {
+            var context = BuildHttpContext(queryParams);
+            if (routeValues != null)
+            {
+                foreach (var kv in routeValues)
+                    context.Request.RouteValues[kv.Key] = kv.Value;
+            }
+            return context;
+        }
+
+        /// <summary>
         /// A minimal concrete DicomWebService that implements IDicomQidoProvider,
         /// delegating QIDO handling to an injected callback.
         /// </summary>
@@ -1229,6 +1247,254 @@ namespace FellowOakDicom.Tests.DicomWeb
 
             Assert.NotNull(capturedRequest);
             Assert.Equal(DicomQueryRetrieveLevel.Study, capturedRequest.Level);
+        }
+
+        #endregion
+
+        #region Series and Instance endpoints (PS3.18 Table 10.6.1-1)
+
+        // ── HandleQidoSeriesRequestAsync ──────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task HandleQidoSeriesRequest_NoRouteValues_RequestIsSeriesLevel()
+        {
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            await service.HandleQidoSeriesRequestAsync(BuildHttpContext());
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal(DicomQueryRetrieveLevel.Series, capturedRequest.Level);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoSeriesRequest_WithStudyInstanceUID_InjectedIntoDataset()
+        {
+            // Simulates GET /studies/{studyInstanceUID}/series — the route value should be
+            // injected into the dataset as a StudyInstanceUID match constraint.
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(null, new Dictionary<string, string>
+            {
+                ["studyInstanceUID"] = "1.2.3.4.5"
+            });
+
+            await service.HandleQidoSeriesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal("1.2.3.4.5",
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty));
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoSeriesRequest_NoRouteValues_StudyInstanceUIDNotConstrained()
+        {
+            // Simulates GET /series — relational query, no study scope
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            await service.HandleQidoSeriesRequestAsync(BuildHttpContext());
+
+            Assert.NotNull(capturedRequest);
+            // StudyInstanceUID may be present (seeded empty by constructor) but must not be set to a real UID
+            Assert.Equal(string.Empty,
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty));
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoSeriesRequest_WithQueryParam_QueryParamApplied()
+        {
+            // Regular query params still work for series endpoints
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(
+                new Dictionary<string, StringValues> { ["Modality"] = "CT" },
+                new Dictionary<string, string> { ["studyInstanceUID"] = "1.2.3.4.5" });
+
+            await service.HandleQidoSeriesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal("CT",
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.Modality, string.Empty));
+            Assert.Equal("1.2.3.4.5",
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty));
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoSeriesRequest_RouteStudyUID_OverridesQueryStringStudyUID()
+        {
+            // Route value takes precedence over any query-string value for the same tag
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(
+                new Dictionary<string, StringValues> { ["StudyInstanceUID"] = "9.9.9" },
+                new Dictionary<string, string> { ["studyInstanceUID"] = "1.2.3.4.5" });
+
+            await service.HandleQidoSeriesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            // Route value "1.2.3.4.5" must win over query-string "9.9.9"
+            Assert.Equal("1.2.3.4.5",
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty));
+        }
+
+        // ── HandleQidoInstancesRequestAsync ───────────────────────────────────
+
+        [FactForNetCore]
+        public async Task HandleQidoInstancesRequest_NoRouteValues_RequestIsImageLevel()
+        {
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            await service.HandleQidoInstancesRequestAsync(BuildHttpContext());
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal(DicomQueryRetrieveLevel.Image, capturedRequest.Level);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoInstancesRequest_WithStudyUID_InjectedIntoDataset()
+        {
+            // Simulates GET /studies/{studyInstanceUID}/instances
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(null, new Dictionary<string, string>
+            {
+                ["studyInstanceUID"] = "1.2.3.4.5"
+            });
+
+            await service.HandleQidoInstancesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal("1.2.3.4.5",
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty));
+            // No series constraint injected
+            Assert.Equal(string.Empty,
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.SeriesInstanceUID, string.Empty));
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoInstancesRequest_WithStudyAndSeriesUID_BothInjectedIntoDataset()
+        {
+            // Simulates GET /studies/{studyInstanceUID}/series/{seriesInstanceUID}/instances
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(null, new Dictionary<string, string>
+            {
+                ["studyInstanceUID"] = "1.2.3.4.5",
+                ["seriesInstanceUID"] = "6.7.8.9.0"
+            });
+
+            await service.HandleQidoInstancesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal("1.2.3.4.5",
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty));
+            Assert.Equal("6.7.8.9.0",
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.SeriesInstanceUID, string.Empty));
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoInstancesRequest_NoRouteValues_NeitherUidConstrained()
+        {
+            // Simulates GET /instances — relational query, no study or series scope
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            await service.HandleQidoInstancesRequestAsync(BuildHttpContext());
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal(string.Empty,
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty));
+            Assert.Equal(string.Empty,
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.SeriesInstanceUID, string.Empty));
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoInstancesRequest_WithQueryParams_QueryParamsApplied()
+        {
+            // Query params still work on instance endpoints
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(
+                new Dictionary<string, StringValues> { ["SOPClassUID"] = "1.2.840.10008.5.1.4.1.1.2" },
+                new Dictionary<string, string>
+                {
+                    ["studyInstanceUID"] = "1.2.3.4.5",
+                    ["seriesInstanceUID"] = "6.7.8.9.0"
+                });
+
+            await service.HandleQidoInstancesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal("1.2.840.10008.5.1.4.1.1.2",
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.SOPClassUID, string.Empty));
+        }
+
+        // ── 501 Not Implemented on new methods ────────────────────────────────
+
+        [FactForNetCore]
+        public async Task HandleQidoSeriesRequest_NoProvider_Returns501()
+        {
+            var service = new NotImplementedDicomWebService();
+            var context = BuildHttpContext();
+            await service.HandleQidoSeriesRequestAsync(context);
+            Assert.Equal(StatusCodes.Status501NotImplemented, context.Response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoInstancesRequest_NoProvider_Returns501()
+        {
+            var service = new NotImplementedDicomWebService();
+            var context = BuildHttpContext();
+            await service.HandleQidoInstancesRequestAsync(context);
+            Assert.Equal(StatusCodes.Status501NotImplemented, context.Response.StatusCode);
         }
 
         #endregion
