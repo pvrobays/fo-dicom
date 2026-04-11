@@ -23,7 +23,6 @@ namespace FellowOakDicom.AspNetCore
             urlPrefix = urlPrefix.TrimEnd('/');
             urlPrefix = urlPrefix.StartsWith("/") ? urlPrefix : $"/{urlPrefix}";
             
-            app.UseFellowOakDicom(); //TODO PJ: necessary?
             app.UseRouting();
             app.UseEndpoints(endpoints =>
             {

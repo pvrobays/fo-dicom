@@ -3,7 +3,7 @@ using System;
 
 namespace FellowOakDicom.DicomWeb
 {
-    public class DicomQidoRequest //TODO PJ: have shared base class with DicomQidoResponse?
+    public class DicomQidoRequest
     {
         #region CONSTRUCTORS
         public DicomQidoRequest(DicomQueryRetrieveLevel level, DicomQidoRequestOptions? options = null)
