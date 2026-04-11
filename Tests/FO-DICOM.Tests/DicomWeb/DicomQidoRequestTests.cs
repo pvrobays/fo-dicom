@@ -2,6 +2,7 @@
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
+using System;
 using FellowOakDicom.DicomWeb;
 using FellowOakDicom.Network;
 using Xunit;
@@ -169,6 +170,61 @@ namespace FellowOakDicom.Tests.DicomWeb
 
             var value = request.Dataset.GetSingleValueOrDefault(DicomTag.AccessionNumber, string.Empty);
             Assert.Equal("ACC123", value);
+        }
+
+        [Fact]
+        public void CreateStudyQuery_WithStudyDateRange_StudyDateWireValueIsRangeString()
+        {
+            var range = new DicomDateRange(new DateTime(2013, 1, 1), new DateTime(2013, 12, 31));
+            var request = DicomQidoRequest.CreateStudyQuery(studyDateTime: range);
+
+            // The dataset stores the DicomDateRange as a wire-format DA string "20130101-20131231"
+            var wireValue = request.Dataset.GetSingleValue<string>(DicomTag.StudyDate);
+            Assert.Equal("20130101-20131231", wireValue);
+        }
+
+        [Fact]
+        public void CreateStudyQuery_WithOpenEndStudyDateRange_StudyDateWireValueIsOpenEndString()
+        {
+            // Open-end range: all dates from 2013-01-01 onwards
+            var range = new DicomDateRange(new DateTime(2013, 1, 1), DateTime.MaxValue);
+            var request = DicomQidoRequest.CreateStudyQuery(studyDateTime: range);
+
+            var wireValue = request.Dataset.GetSingleValue<string>(DicomTag.StudyDate);
+            Assert.Equal("20130101-", wireValue);
+        }
+
+        [Fact]
+        public void CreateStudyQuery_WithOpenStartStudyDateRange_StudyDateWireValueIsOpenStartString()
+        {
+            // Open-start range: all dates up to and including 2013-12-31
+            var range = new DicomDateRange(DateTime.MinValue, new DateTime(2013, 12, 31));
+            var request = DicomQidoRequest.CreateStudyQuery(studyDateTime: range);
+
+            var wireValue = request.Dataset.GetSingleValue<string>(DicomTag.StudyDate);
+            Assert.Equal("-20131231", wireValue);
+        }
+
+        [Fact]
+        public void CreateStudyQuery_NullStudyDateTime_StudyDateIsEmptyString()
+        {
+            var request = DicomQidoRequest.CreateStudyQuery(studyDateTime: null);
+
+            var wireValue = request.Dataset.GetSingleValueOrDefault(DicomTag.StudyDate, string.Empty);
+            Assert.Equal(string.Empty, wireValue);
+        }
+
+        [Fact]
+        public void CreateStudyQuery_WithStudyDateRange_RangeCanBeReadBackFromDataset()
+        {
+            var min = new DateTime(2013, 1, 1);
+            var max = new DateTime(2013, 12, 31);
+            var range = new DicomDateRange(min, max);
+            var request = DicomQidoRequest.CreateStudyQuery(studyDateTime: range);
+
+            var readBack = request.Dataset.GetSingleValue<DicomDateRange>(DicomTag.StudyDate);
+            Assert.Equal(min, readBack.Minimum);
+            Assert.Equal(max, readBack.Maximum);
         }
 
         #endregion

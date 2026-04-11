@@ -10,6 +10,7 @@ using FellowOakDicom.DicomWeb;
 using FellowOakDicom.Network;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
@@ -1228,6 +1229,187 @@ namespace FellowOakDicom.Tests.DicomWeb
 
             Assert.NotNull(capturedRequest);
             Assert.Equal(DicomQueryRetrieveLevel.Study, capturedRequest.Level);
+        }
+
+        #endregion
+
+        #region Date range matching (PS3.4 C.2.2.2.5)
+
+        // ── DA (Date) range matching ───────────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_StudyDate_BoundedRange_StoredAsDateRange()
+        {
+            // "20130101-20131231" → DicomDateRange with correct min/max
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["StudyDate"] = "20130101-20131231"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            var range = capturedRequest.Dataset.GetSingleValue<DicomDateRange>(DicomTag.StudyDate);
+            Assert.Equal(new DateTime(2013, 1, 1), range.Minimum);
+            Assert.Equal(new DateTime(2013, 12, 31), range.Maximum);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_StudyDate_OpenStartRange_MinIsMinValue()
+        {
+            // "-20131231" → open start: all dates up to and including 2013-12-31
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["StudyDate"] = "-20131231"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            var range = capturedRequest.Dataset.GetSingleValue<DicomDateRange>(DicomTag.StudyDate);
+            Assert.Equal(DateTime.MinValue, range.Minimum);
+            Assert.Equal(new DateTime(2013, 12, 31), range.Maximum);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_StudyDate_OpenEndRange_MaxIsMaxValue()
+        {
+            // "20130101-" → open end: all dates from 2013-01-01 onwards
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["StudyDate"] = "20130101-"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            var range = capturedRequest.Dataset.GetSingleValue<DicomDateRange>(DicomTag.StudyDate);
+            Assert.Equal(new DateTime(2013, 1, 1), range.Minimum);
+            Assert.Equal(DateTime.MaxValue, range.Maximum);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_StudyDate_SingleDate_StoredAsRawString()
+        {
+            // Single date (no hyphen) stays as a raw string — no change from existing behaviour
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["StudyDate"] = "20130509"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal("20130509",
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.StudyDate, string.Empty));
+        }
+
+        // ── TM (Time) range matching ───────────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_StudyTime_BoundedRange_StoredAsDateRange()
+        {
+            // "090000-170000" → DicomDateRange with correct hour bounds
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["StudyTime"] = "090000-170000"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            var range = capturedRequest.Dataset.GetSingleValue<DicomDateRange>(DicomTag.StudyTime);
+            Assert.Equal(9, range.Minimum.Hour);
+            Assert.Equal(0, range.Minimum.Minute);
+            Assert.Equal(17, range.Maximum.Hour);
+            Assert.Equal(0, range.Maximum.Minute);
+        }
+
+        // ── DT (DateTime) range matching ──────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_AcquisitionDateTime_BoundedRange_StoredAsDateRange()
+        {
+            // "20130101000000-20131231235959" → full datetime range
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["AcquisitionDateTime"] = "20130101000000-20131231235959"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            var range = capturedRequest.Dataset.GetSingleValue<DicomDateRange>(DicomTag.AcquisitionDateTime);
+            Assert.Equal(new DateTime(2013, 1, 1, 0, 0, 0), range.Minimum);
+            Assert.Equal(new DateTime(2013, 12, 31, 23, 59, 59), range.Maximum);
+        }
+
+        // ── Non-date tag is unaffected ─────────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_NonDateTagWithHyphen_StoredAsRawString()
+        {
+            // A non-DA/TM/DT tag whose value happens to contain a hyphen (e.g. PatientName
+            // with "SMITH-JONES") must NOT be misidentified as a date range.
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["PatientName"] = "SMITH-JONES"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal("SMITH-JONES",
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.PatientName, string.Empty));
         }
 
         #endregion

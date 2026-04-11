@@ -172,6 +172,40 @@ Run-Test -Label "18. Negative offset" `
     -Url "$BaseUrl/studies?offset=-1" `
     -ExpectedStatus 400
 
+# ===========================================================================
+#  DATE RANGE MATCHING (PS3.4 C.2.2.2.5)
+# ===========================================================================
+
+Write-Host "=============================================" -ForegroundColor Yellow
+Write-Host " Date Range Matching Tests" -ForegroundColor Yellow
+Write-Host "=============================================" -ForegroundColor Yellow
+Write-Host ""
+
+Run-Test -Label "19. StudyDate bounded range" `
+    -Url "$BaseUrl/studies?StudyDate=20230101-20231231" `
+    -Description "All studies with StudyDate between 2023-01-01 and 2023-12-31 (inclusive)" `
+    -MaxBodyChars 800
+
+Run-Test -Label "20. StudyDate open-start range" `
+    -Url "$BaseUrl/studies?StudyDate=-20200101" `
+    -Description "All studies with StudyDate on or before 2020-01-01" `
+    -MaxBodyChars 800
+
+Run-Test -Label "21. StudyDate open-end range" `
+    -Url "$BaseUrl/studies?StudyDate=20220101-" `
+    -Description "All studies with StudyDate on or after 2022-01-01" `
+    -MaxBodyChars 800
+
+Run-Test -Label "22. StudyDate range + PatientName filter" `
+    -Url "$BaseUrl/studies?StudyDate=20220101-20241231&PatientName=SMITH*" `
+    -Description "Date range combined with a patient name wildcard filter" `
+    -MaxBodyChars 800
+
+Run-Test -Label "23. StudyTime bounded range" `
+    -Url "$BaseUrl/studies?StudyTime=090000-170000" `
+    -Description "All studies with StudyTime between 09:00 and 17:00" `
+    -MaxBodyChars 800
+
 Write-Host "=============================================" -ForegroundColor Yellow
 Write-Host " Done!" -ForegroundColor Yellow
 Write-Host "=============================================" -ForegroundColor Yellow

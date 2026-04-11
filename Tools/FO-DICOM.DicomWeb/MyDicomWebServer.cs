@@ -1,5 +1,6 @@
-﻿using Bogus;
+using Bogus;
 using FellowOakDicom.AspNetCore.DicomWebService;
+using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,7 +19,21 @@ namespace FellowOakDicom.DicomWeb
             {
                 IsFuzzyMatchingSupported = false
             };
-            
+
+            // Extract the StudyDate range from the request dataset (if present).
+            // When StudyDate is stored as a DicomDateRange (i.e. the client sent a range string
+            // like "20130101-20131231"), we use it to filter fake results to dates in that range.
+            // When absent or a single-date string, we generate unrestricted fake dates.
+            DicomDateRange studyDateFilter = null;
+            if (request.Dataset.Contains(DicomTag.StudyDate))
+            {
+                var wireValue = request.Dataset.GetSingleValueOrDefault(DicomTag.StudyDate, string.Empty);
+                if (!string.IsNullOrEmpty(wireValue) && wireValue.Contains('-'))
+                {
+                    studyDateFilter = request.Dataset.GetSingleValue<DicomDateRange>(DicomTag.StudyDate);
+                }
+            }
+
             //TODO PJ: Create a list of all columns to retrieve from the database
             
             //TODO PJ: Get the data columns from the database
@@ -27,7 +42,7 @@ namespace FellowOakDicom.DicomWeb
             for (var i = 0; i < 5; i++)
             {
                 var dicomDataset = request.Dataset.Clone();
-                PopulateWithFakeData(dicomDataset);
+                PopulateWithFakeData(dicomDataset, studyDateFilter);
                 response.AddResult(dicomDataset);
             }
             
@@ -37,8 +52,10 @@ namespace FellowOakDicom.DicomWeb
         /// <summary>
         /// Populates a DicomDataset with fake data based on the VR of each item.
         /// Recurses into sequence items to populate nested datasets as well.
+        /// When <paramref name="studyDateFilter"/> is non-null, DA values for
+        /// <see cref="DicomTag.StudyDate"/> are constrained to fall within that range.
         /// </summary>
-        private void PopulateWithFakeData(DicomDataset dataset)
+        private void PopulateWithFakeData(DicomDataset dataset, DicomDateRange studyDateFilter = null)
         {
             foreach (DicomItem item in dataset.ToList())
             {
@@ -66,7 +83,23 @@ namespace FellowOakDicom.DicomWeb
                 switch (item.ValueRepresentation.Code)
                 {
                     case DicomVRCode.DA:
-                        dataset.AddOrUpdate(item.Tag, _faker.Date.Past());
+                        if (item.Tag == DicomTag.StudyDate && studyDateFilter != null)
+                        {
+                            // Honour the requested date range: generate a random date within [min, max].
+                            // DateTime.MinValue / MaxValue sentinels mean "unbounded" — clamp them to
+                            // a sensible window so Bogus doesn't generate out-of-range dates.
+                            var rangeMin = studyDateFilter.Minimum == DateTime.MinValue
+                                ? DateTime.Today.AddYears(-10)
+                                : studyDateFilter.Minimum;
+                            var rangeMax = studyDateFilter.Maximum == DateTime.MaxValue
+                                ? DateTime.Today
+                                : studyDateFilter.Maximum;
+                            dataset.AddOrUpdate(item.Tag, _faker.Date.Between(rangeMin, rangeMax));
+                        }
+                        else
+                        {
+                            dataset.AddOrUpdate(item.Tag, _faker.Date.Past());
+                        }
                         break;
                     case DicomVRCode.TM:
                         dataset.AddOrUpdate(item.Tag, _faker.Date.Past());

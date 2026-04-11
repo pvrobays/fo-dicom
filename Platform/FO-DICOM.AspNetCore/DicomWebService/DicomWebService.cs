@@ -240,9 +240,18 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     dataset.AddOrUpdate(new DicomSequence(dicomTag));
                     continue;
                 }
-                dataset.AddOrUpdate(dicomTag, stringValues.ToArray()); //TODO PJ: check that every value works as a string?
-                //TODO PJ: add study date ranges?
-                //TODO PJ: add ability for multiple values (e.g. study instance UID list with csv)
+                // Per PS3.4 C.2.2.2.5: DA/TM/DT tags support range syntax such as
+                // "20130101-20131231", "-20131231" (open start), or "20130101-" (open end).
+                // Detect the hyphen and store as a typed DicomDateRange so the dataset carries
+                // proper range semantics rather than a raw string.
+                // Single date values (no hyphen) are left as raw strings; DicomDateElement.Get<DicomDateRange>()
+                // already handles single-date strings correctly at read time.
+                if (IsDicomDateVr(dicomTag) && stringValues.ToString().Contains('-'))
+                {
+                    dataset.AddOrUpdate<DicomDateRange>(dicomTag, ParseDateRange(dicomTag, stringValues.ToString()));
+                    continue;
+                }
+                dataset.AddOrUpdate(dicomTag, stringValues.ToArray()); //TODO PJ: add ability for multiple values (e.g. study instance UID list with csv)
             }
 
             return dicomRequest;
@@ -334,6 +343,29 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             {
                 currentDataset.AddOrUpdate(leafTag, values);
             }
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> when the primary VR of <paramref name="tag"/> is DA, TM, or DT —
+        /// the three VRs for which DICOM defines range matching syntax (PS3.4 C.2.2.2.5).
+        /// </summary>
+        private static bool IsDicomDateVr(DicomTag tag)
+        {
+            var primaryVr = tag.DictionaryEntry.ValueRepresentations.FirstOrDefault();
+            return primaryVr == DicomVR.DA || primaryVr == DicomVR.TM || primaryVr == DicomVR.DT;
+        }
+
+        /// <summary>
+        /// Parses a DICOM date/time range string (e.g. <c>"20130101-20131231"</c>,
+        /// <c>"-20131231"</c>, <c>"20130101-"</c>) into a <see cref="DicomDateRange"/>.
+        /// Delegates to <see cref="DicomDateElement.Get{T}"/> via a temporary dataset so that all
+        /// VR-specific format strings (DA, TM, DT) are handled by the existing fo-dicom machinery.
+        /// </summary>
+        private static DicomDateRange ParseDateRange(DicomTag tag, string value)
+        {
+            var temp = new DicomDataset().NotValidated();
+            temp.AddOrUpdate(tag, value);
+            return temp.GetSingleValue<DicomDateRange>(tag);
         }
 
         private static bool TryParseInt(IQueryCollection query, string key, out int o)
