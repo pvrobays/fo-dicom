@@ -94,6 +94,10 @@ namespace FellowOakDicom.Tests.DicomWeb
         [InlineData(0x0008, 0x0060)] // Modality
         [InlineData(0x0020, 0x000E)] // SeriesInstanceUID
         [InlineData(0x0020, 0x0011)] // SeriesNumber
+        [InlineData(0x0020, 0x1209)] // NumberOfSeriesRelatedInstances
+        [InlineData(0x0040, 0x0244)] // PerformedProcedureStepStartDate
+        [InlineData(0x0040, 0x0245)] // PerformedProcedureStepStartTime
+        [InlineData(0x0040, 0x0275)] // RequestAttributesSequence
         public void SeriesLevel_ContainsMinimumRequiredResponseTag(int group, int element)
         {
             var request = new DicomQidoRequest(DicomQueryRetrieveLevel.Series);
@@ -102,10 +106,28 @@ namespace FellowOakDicom.Tests.DicomWeb
                 $"Series-level QIDO request is missing required response tag ({group:X4},{element:X4})");
         }
 
+        [Fact]
+        public void SeriesLevel_RequestAttributesSequence_ContainsRequiredChildTags()
+        {
+            var request = new DicomQidoRequest(DicomQueryRetrieveLevel.Series);
+
+            Assert.True(request.Dataset.TryGetSequence(DicomTag.RequestAttributesSequence, out var seq));
+            Assert.NotEmpty(seq.Items);
+            var item = seq.Items[0];
+            Assert.True(item.Contains(DicomTag.ScheduledProcedureStepID),
+                "RequestAttributesSequence item is missing ScheduledProcedureStepID");
+            Assert.True(item.Contains(DicomTag.RequestedProcedureID),
+                "RequestAttributesSequence item is missing RequestedProcedureID");
+        }
+
         [Theory]
         [InlineData(0x0008, 0x0016)] // SOPClassUID
         [InlineData(0x0008, 0x0018)] // SOPInstanceUID
         [InlineData(0x0020, 0x0013)] // InstanceNumber
+        [InlineData(0x0028, 0x0010)] // Rows
+        [InlineData(0x0028, 0x0011)] // Columns
+        [InlineData(0x0028, 0x0100)] // BitsAllocated
+        [InlineData(0x0028, 0x0008)] // NumberOfFrames
         public void ImageLevel_ContainsMinimumRequiredResponseTag(int group, int element)
         {
             var request = new DicomQidoRequest(DicomQueryRetrieveLevel.Image);
@@ -225,6 +247,107 @@ namespace FellowOakDicom.Tests.DicomWeb
             var readBack = request.Dataset.GetSingleValue<DicomDateRange>(DicomTag.StudyDate);
             Assert.Equal(min, readBack.Minimum);
             Assert.Equal(max, readBack.Maximum);
+        }
+
+        #endregion
+
+        #region CreateSeriesQuery factory method
+
+        [Fact]
+        public void CreateSeriesQuery_NoArguments_IsSeriesLevel()
+        {
+            var request = DicomQidoRequest.CreateSeriesQuery();
+
+            Assert.Equal(DicomQueryRetrieveLevel.Series, request.Level);
+        }
+
+        [Fact]
+        public void CreateSeriesQuery_WithStudyInstanceUid_SetsStudyInstanceUidInDataset()
+        {
+            var uid = DicomUID.Generate().UID;
+            var request = DicomQidoRequest.CreateSeriesQuery(studyInstanceUid: uid);
+
+            Assert.Equal(uid,
+                request.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty));
+        }
+
+        [Fact]
+        public void CreateSeriesQuery_NullStudyInstanceUid_StudyInstanceUidIsEmpty()
+        {
+            // null studyInstanceUid = relational "all series" query — no parent scope
+            var request = DicomQidoRequest.CreateSeriesQuery(studyInstanceUid: null);
+
+            Assert.Equal(string.Empty,
+                request.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty));
+        }
+
+        [Fact]
+        public void CreateSeriesQuery_WithModality_SetsModalityInDataset()
+        {
+            var request = DicomQidoRequest.CreateSeriesQuery(modality: "CT");
+
+            Assert.Equal("CT",
+                request.Dataset.GetSingleValueOrDefault(DicomTag.Modality, string.Empty));
+        }
+
+        [Fact]
+        public void CreateSeriesQuery_WithSeriesInstanceUid_SetsSeriesInstanceUidInDataset()
+        {
+            var uid = DicomUID.Generate().UID;
+            var request = DicomQidoRequest.CreateSeriesQuery(seriesInstanceUid: uid);
+
+            Assert.Equal(uid,
+                request.Dataset.GetSingleValueOrDefault(DicomTag.SeriesInstanceUID, string.Empty));
+        }
+
+        #endregion
+
+        #region CreateInstanceQuery factory method
+
+        [Fact]
+        public void CreateInstanceQuery_NoArguments_IsImageLevel()
+        {
+            var request = DicomQidoRequest.CreateInstanceQuery();
+
+            Assert.Equal(DicomQueryRetrieveLevel.Image, request.Level);
+        }
+
+        [Fact]
+        public void CreateInstanceQuery_WithStudyAndSeriesUid_SetsBothInDataset()
+        {
+            var studyUid = DicomUID.Generate().UID;
+            var seriesUid = DicomUID.Generate().UID;
+            var request = DicomQidoRequest.CreateInstanceQuery(
+                studyInstanceUid: studyUid,
+                seriesInstanceUid: seriesUid);
+
+            Assert.Equal(studyUid,
+                request.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty));
+            Assert.Equal(seriesUid,
+                request.Dataset.GetSingleValueOrDefault(DicomTag.SeriesInstanceUID, string.Empty));
+        }
+
+        [Fact]
+        public void CreateInstanceQuery_WithSopInstanceUid_SetsSopInstanceUidInDataset()
+        {
+            var uid = DicomUID.Generate().UID;
+            var request = DicomQidoRequest.CreateInstanceQuery(sopInstanceUid: uid);
+
+            Assert.Equal(uid,
+                request.Dataset.GetSingleValueOrDefault(DicomTag.SOPInstanceUID, string.Empty));
+        }
+
+        [Fact]
+        public void CreateInstanceQuery_NullStudyAndSeriesUid_AllScopeUidsAreEmpty()
+        {
+            // null uids = relational "all instances" query
+            var request = DicomQidoRequest.CreateInstanceQuery(
+                studyInstanceUid: null, seriesInstanceUid: null);
+
+            Assert.Equal(string.Empty,
+                request.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty));
+            Assert.Equal(string.Empty,
+                request.Dataset.GetSingleValueOrDefault(DicomTag.SeriesInstanceUID, string.Empty));
         }
 
         #endregion

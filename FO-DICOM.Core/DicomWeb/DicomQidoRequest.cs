@@ -38,17 +38,33 @@ namespace FellowOakDicom.DicomWeb
                     AddIfNotExists(DicomTag.NumberOfStudyRelatedInstances);
                     break;
                 case DicomQueryRetrieveLevel.Series:
+                    // Required response attributes per PS3.18 Table 10.6.3-4
                     AddIfNotExists(DicomTag.Modality);
                     AddIfNotExists(DicomTag.SeriesDescription);
                     AddIfNotExists(DicomTag.SeriesInstanceUID);
                     AddIfNotExists(DicomTag.SeriesNumber);
                     AddIfNotExists(DicomTag.NumberOfSeriesRelatedInstances);
+                    AddIfNotExists(DicomTag.PerformedProcedureStepStartDate);
+                    AddIfNotExists(DicomTag.PerformedProcedureStepStartTime);
+                    // RequestAttributesSequence (0040,0275) with required children
+                    if (!Dataset.Contains(DicomTag.RequestAttributesSequence))
+                    {
+                        var item = new DicomDataset().NotValidated();
+                        item.Add(DicomTag.ScheduledProcedureStepID, string.Empty);
+                        item.Add(DicomTag.RequestedProcedureID, string.Empty);
+                        Dataset.Add(new DicomSequence(DicomTag.RequestAttributesSequence, item));
+                    }
                     break;
                 case DicomQueryRetrieveLevel.Image:
+                    // Required response attributes per PS3.18 Table 10.6.3-5
                     AddIfNotExists(DicomTag.SOPClassUID);
                     AddIfNotExists(DicomTag.SOPInstanceUID);
                     AddIfNotExists(DicomTag.InstanceAvailability);
                     AddIfNotExists(DicomTag.InstanceNumber);
+                    AddIfNotExists(DicomTag.Rows);
+                    AddIfNotExists(DicomTag.Columns);
+                    AddIfNotExists(DicomTag.BitsAllocated);
+                    AddIfNotExists(DicomTag.NumberOfFrames);
                     break;
                 case DicomQueryRetrieveLevel.Worklist:
                     return; //not supported
@@ -160,7 +176,57 @@ namespace FellowOakDicom.DicomWeb
             return req;
         }
         
-        //TODO PJ: add Patient, Series, Image (, Worklist) query methods
+        /// <summary>
+        /// Convenience method for creating a QIDO-RS series query.
+        /// </summary>
+        /// <param name="studyInstanceUid">
+        /// Study Instance UID to scope the query (sets the hierarchical parent).
+        /// Pass <c>null</c> for a relational "all series" query across all studies.
+        /// </param>
+        /// <param name="modality">Modality to match (e.g. "CT", "MR"). <c>null</c> matches any modality.</param>
+        /// <param name="seriesInstanceUid">Series Instance UID for exact-match filtering. <c>null</c> returns all series.</param>
+        /// <param name="seriesNumber">Series number to match. <c>null</c> matches any.</param>
+        /// <returns>QIDO-RS series query object.</returns>
+        public static DicomQidoRequest CreateSeriesQuery(
+            string? studyInstanceUid = null,
+            string? modality = null,
+            string? seriesInstanceUid = null,
+            string? seriesNumber = null)
+        {
+            var req = new DicomQidoRequest(DicomQueryRetrieveLevel.Series);
+            req.Dataset.AddOrUpdate(DicomTag.StudyInstanceUID, studyInstanceUid);
+            req.Dataset.AddOrUpdate(DicomTag.Modality, modality);
+            req.Dataset.AddOrUpdate(DicomTag.SeriesInstanceUID, seriesInstanceUid);
+            req.Dataset.AddOrUpdate(DicomTag.SeriesNumber, seriesNumber);
+            req.Dataset.AddOrUpdate(DicomTag.NumberOfSeriesRelatedInstances, string.Empty);
+            return req;
+        }
+
+        /// <summary>
+        /// Convenience method for creating a QIDO-RS instance query.
+        /// </summary>
+        /// <param name="studyInstanceUid">
+        /// Study Instance UID to scope the query. Pass <c>null</c> for a relational "all instances" query.
+        /// </param>
+        /// <param name="seriesInstanceUid">
+        /// Series Instance UID to scope the query. Pass <c>null</c> to search across all series within the study.
+        /// </param>
+        /// <param name="sopInstanceUid">SOP Instance UID for exact-match filtering. <c>null</c> returns all instances.</param>
+        /// <param name="instanceNumber">Instance number to match. <c>null</c> matches any.</param>
+        /// <returns>QIDO-RS instance query object.</returns>
+        public static DicomQidoRequest CreateInstanceQuery(
+            string? studyInstanceUid = null,
+            string? seriesInstanceUid = null,
+            string? sopInstanceUid = null,
+            string? instanceNumber = null)
+        {
+            var req = new DicomQidoRequest(DicomQueryRetrieveLevel.Image);
+            req.Dataset.AddOrUpdate(DicomTag.StudyInstanceUID, studyInstanceUid);
+            req.Dataset.AddOrUpdate(DicomTag.SeriesInstanceUID, seriesInstanceUid);
+            req.Dataset.AddOrUpdate(DicomTag.SOPInstanceUID, sopInstanceUid);
+            req.Dataset.AddOrUpdate(DicomTag.InstanceNumber, instanceNumber);
+            return req;
+        }
         
         #endregion
     }
