@@ -206,6 +206,25 @@ Run-Test -Label "23. StudyTime bounded range" `
     -Description "All studies with StudyTime between 09:00 and 17:00" `
     -MaxBodyChars 800
 
+# ===========================================================================
+#  UID LIST MATCHING (PS3.18 Section 8.3.4.1 / PS3.4 C.2.2.2.2)
+# ===========================================================================
+
+Write-Host "=============================================" -ForegroundColor Yellow
+Write-Host " UID List Matching Tests" -ForegroundColor Yellow
+Write-Host "=============================================" -ForegroundColor Yellow
+Write-Host ""
+
+Run-Test -Label "24. Single StudyInstanceUID filter" `
+    -Url "$BaseUrl/studies?StudyInstanceUID=1.2.840.10008.5.1.4.1.1.2" `
+    -Description "Matches studies with a specific StudyInstanceUID" `
+    -MaxBodyChars 800
+
+Run-Test -Label "25. Multi-UID list (comma-separated)" `
+    -Url "$BaseUrl/studies?StudyInstanceUID=1.2.840.10008.5.1.4.1.1.2,1.2.840.10008.5.1.4.1.1.4,1.2.840.10008.5.1.4.1.1.128" `
+    -Description "Matches studies whose UID is any of the three specified UIDs (PS3.4 C.2.2.2.2)" `
+    -MaxBodyChars 800
+
 Write-Host "=============================================" -ForegroundColor Yellow
 Write-Host " Done!" -ForegroundColor Yellow
 Write-Host "=============================================" -ForegroundColor Yellow

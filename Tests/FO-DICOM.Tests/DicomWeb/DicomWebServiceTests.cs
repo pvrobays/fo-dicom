@@ -1233,6 +1233,153 @@ namespace FellowOakDicom.Tests.DicomWeb
 
         #endregion
 
+        #region UID list matching (PS3.18 Section 8.3.4.1 / PS3.4 C.2.2.2.2)
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_StudyInstanceUID_SingleUid_StoredAsSingleValue()
+        {
+            // A single UID (no comma) behaves exactly as before
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["StudyInstanceUID"] = "1.2.3.4.5"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal(1, capturedRequest.Dataset.GetValueCount(DicomTag.StudyInstanceUID));
+            Assert.Equal("1.2.3.4.5",
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty));
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_StudyInstanceUID_TwoUids_StoredAsTwoValues()
+        {
+            // "1.2.3,4.5.6" → two separate UID values in the dataset per PS3.4 C.2.2.2.2
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["StudyInstanceUID"] = "1.2.3,4.5.6"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal(2, capturedRequest.Dataset.GetValueCount(DicomTag.StudyInstanceUID));
+            var uids = capturedRequest.Dataset.GetValues<string>(DicomTag.StudyInstanceUID);
+            Assert.Contains("1.2.3", uids);
+            Assert.Contains("4.5.6", uids);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_StudyInstanceUID_ThreeUids_StoredAsThreeValues()
+        {
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["StudyInstanceUID"] = "1.2.3,4.5.6,7.8.9"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal(3, capturedRequest.Dataset.GetValueCount(DicomTag.StudyInstanceUID));
+            var uids = capturedRequest.Dataset.GetValues<string>(DicomTag.StudyInstanceUID);
+            Assert.Contains("1.2.3", uids);
+            Assert.Contains("4.5.6", uids);
+            Assert.Contains("7.8.9", uids);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_StudyInstanceUID_ViaHexTag_TwoUids_StoredAsTwoValues()
+        {
+            // Same behaviour when the tag is specified as a hex string (0020000D)
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["0020000D"] = "1.2.3,4.5.6"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal(2, capturedRequest.Dataset.GetValueCount(DicomTag.StudyInstanceUID));
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_SOPInstanceUID_TwoUids_StoredAsTwoValues()
+        {
+            // Confirms the generic VR-based approach applies to all UI tags, not just StudyInstanceUID
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["SOPInstanceUID"] = "1.2.3,4.5.6"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal(2, capturedRequest.Dataset.GetValueCount(DicomTag.SOPInstanceUID));
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_NonUidTagWithComma_StoredAsRawString()
+        {
+            // A non-UI tag whose value contains a comma must NOT be split.
+            // AccessionNumber (SH VR) with value "ACC1,ACC2" should be stored verbatim.
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["AccessionNumber"] = "ACC1,ACC2"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.Equal(1, capturedRequest.Dataset.GetValueCount(DicomTag.AccessionNumber));
+            Assert.Equal("ACC1,ACC2",
+                capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.AccessionNumber, string.Empty));
+        }
+
+        #endregion
+
         #region Date range matching (PS3.4 C.2.2.2.5)
 
         // ── DA (Date) range matching ───────────────────────────────────────────

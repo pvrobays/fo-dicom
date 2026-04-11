@@ -251,7 +251,16 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     dataset.AddOrUpdate<DicomDateRange>(dicomTag, ParseDateRange(dicomTag, stringValues.ToString()));
                     continue;
                 }
-                dataset.AddOrUpdate(dicomTag, stringValues.ToArray()); //TODO PJ: add ability for multiple values (e.g. study instance UID list with csv)
+                // Per PS3.18 Section 8.3.4.1: UID list matching uses a comma-separated list of UIDs.
+                // Split on comma and store each UID as a separate value so they are encoded as
+                // backslash-delimited multi-value UI elements per PS3.4 C.2.2.2.2.
+                // The single-UID case (no comma) is handled identically to the previous behaviour.
+                if (IsUidVr(dicomTag))
+                {
+                    dataset.AddOrUpdate(dicomTag, stringValues.ToString().Split(','));
+                    continue;
+                }
+                dataset.AddOrUpdate(dicomTag, stringValues.ToArray());
             }
 
             return dicomRequest;
@@ -353,6 +362,18 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         {
             var primaryVr = tag.DictionaryEntry.ValueRepresentations.FirstOrDefault();
             return primaryVr == DicomVR.DA || primaryVr == DicomVR.TM || primaryVr == DicomVR.DT;
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> when the primary VR of <paramref name="tag"/> is UI.
+        /// UI tags support UID list matching per PS3.18 Section 8.3.4.1 and PS3.4 C.2.2.2.2:
+        /// the HTTP query string uses comma as the separator, which maps to the DICOM
+        /// backslash-delimited multi-value encoding.
+        /// </summary>
+        private static bool IsUidVr(DicomTag tag)
+        {
+            var primaryVr = tag.DictionaryEntry.ValueRepresentations.FirstOrDefault();
+            return primaryVr == DicomVR.UI;
         }
 
         /// <summary>
