@@ -135,20 +135,20 @@ namespace FellowOakDicom.DicomWeb
             string? studyInstanceUid = null)
         {
             var req = new DicomQidoRequest(DicomQueryRetrieveLevel.Study);
-            req.Dataset.Add(DicomTag.PatientID, patientId);
-            req.Dataset.Add(DicomTag.PatientName, patientName);
-            // req.Dataset.Add(DicomTag.IssuerOfPatientID, string.Empty); //Not according to QIDO standard
-            // req.Dataset.Add(DicomTag.PatientSex, string.Empty); //Not according to QIDO standard
-            // req.Dataset.Add(DicomTag.PatientBirthDate, string.Empty); //Not according to QIDO standard
-            req.Dataset.Add(DicomTag.StudyInstanceUID, studyInstanceUid);
-            req.Dataset.Add(DicomTag.ModalitiesInStudy, modalitiesInStudy);
-            req.Dataset.Add(DicomTag.StudyID, studyId);
-            req.Dataset.Add(DicomTag.AccessionNumber, accession);
-            req.Dataset.Add(DicomTag.StudyDate, studyDateTime);
-            req.Dataset.Add(DicomTag.StudyTime, studyDateTime);
-            // req.Dataset.Add(DicomTag.StudyDescription, string.Empty); //Not according to QIDO standard
-            req.Dataset.Add(DicomTag.NumberOfStudyRelatedSeries, string.Empty);
-            req.Dataset.Add(DicomTag.NumberOfStudyRelatedInstances, string.Empty);
+            req.Dataset.AddOrUpdate(DicomTag.PatientID, patientId);
+            req.Dataset.AddOrUpdate(DicomTag.PatientName, patientName);
+            // req.Dataset.AddOrUpdate(DicomTag.IssuerOfPatientID, string.Empty); //Not according to QIDO standard
+            // req.Dataset.AddOrUpdate(DicomTag.PatientSex, string.Empty); //Not according to QIDO standard
+            // req.Dataset.AddOrUpdate(DicomTag.PatientBirthDate, string.Empty); //Not according to QIDO standard
+            req.Dataset.AddOrUpdate(DicomTag.StudyInstanceUID, studyInstanceUid);
+            req.Dataset.AddOrUpdate(DicomTag.ModalitiesInStudy, modalitiesInStudy);
+            req.Dataset.AddOrUpdate(DicomTag.StudyID, studyId);
+            req.Dataset.AddOrUpdate(DicomTag.AccessionNumber, accession);
+            req.Dataset.AddOrUpdate<DicomDateRange>(DicomTag.StudyDate, studyDateTime);
+            req.Dataset.AddOrUpdate<DicomDateRange>(DicomTag.StudyTime, studyDateTime);
+            // req.Dataset.AddOrUpdate(DicomTag.StudyDescription, string.Empty); //Not according to QIDO standard
+            req.Dataset.AddOrUpdate(DicomTag.NumberOfStudyRelatedSeries, string.Empty);
+            req.Dataset.AddOrUpdate(DicomTag.NumberOfStudyRelatedInstances, string.Empty);
             return req;
         }
         
