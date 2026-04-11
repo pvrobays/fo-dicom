@@ -19,6 +19,10 @@
     <NoWarn>CS8002</NoWarn>
   </PropertyGroup>
 
+  <ItemGroup Condition=" '$(TargetFramework)' != 'net462' ">
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="8.0.0" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Ben.Demystifier" Version="0.4.1" />
     <PackageReference Include="coverlet.collector" Version="6.0.4">
@@ -70,6 +74,10 @@
   <ItemGroup>
 	<ProjectReference Include="..\..\FO-DICOM.Core\FO-DICOM.Core.csproj" />
     <ProjectReference Include="..\..\Serialization\FO-DICOM.Json\FO-DICOM.Json.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition=" '$(TargetFramework)' != 'net462' ">
+    <ProjectReference Include="..\..\Platform\FO-DICOM.AspNetCore\FO-DICOM.AspNetCore.csproj" />
   </ItemGroup>
 
   <ItemGroup>
