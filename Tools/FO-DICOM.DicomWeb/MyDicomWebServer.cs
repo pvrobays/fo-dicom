@@ -1,5 +1,6 @@
 ﻿using Bogus;
 using FellowOakDicom.AspNetCore.DicomWebService;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -26,39 +27,72 @@ namespace FellowOakDicom.DicomWeb
             for (var i = 0; i < 5; i++)
             {
                 var dicomDataset = request.Dataset.Clone();
-                
-                foreach (DicomItem item in request.Dataset)
-                {
-                    switch (item.ValueRepresentation.Code)
-                    {
-                        case DicomVRCode.DA:
-                            dicomDataset.AddOrUpdate(item.Tag, _faker.Date.Past());
-                            break;
-                        case DicomVRCode.TM:
-                            dicomDataset.AddOrUpdate(item.Tag, _faker.Date.Past());
-                            break;
-                        case DicomVRCode.SH:
-                            dicomDataset.AddOrUpdate(item.Tag, _faker.Random.String2(10));
-                            break;
-                        case DicomVRCode.PN:
-                            dicomDataset.AddOrUpdate(item.Tag, $"{_faker.Name.LastName()}^{_faker.Name.FirstName()}");
-                            break;
-                        case DicomVRCode.UI:
-                            dicomDataset.AddOrUpdate(item.Tag, DicomUID.Generate());
-                            break;
-                        case DicomVRCode.IS:
-                            dicomDataset.AddOrUpdate(item.Tag, _faker.Random.Number(0, 1000));
-                            break;
-                        default:
-                            break;
-                    }
-                }
-                
-                
+                PopulateWithFakeData(dicomDataset);
                 response.AddResult(dicomDataset);
             }
             
             return response;
+        }
+
+        /// <summary>
+        /// Populates a DicomDataset with fake data based on the VR of each item.
+        /// Recurses into sequence items to populate nested datasets as well.
+        /// </summary>
+        private void PopulateWithFakeData(DicomDataset dataset)
+        {
+            foreach (DicomItem item in dataset.ToList())
+            {
+                if (item is DicomSequence sequence)
+                {
+                    // Recurse into each sequence item and populate with fake data
+                    foreach (var sequenceItem in sequence.Items)
+                    {
+                        PopulateWithFakeData(sequenceItem);
+                    }
+
+                    // If the sequence is empty (bare include field), add one fake item
+                    if (sequence.Items.Count == 0)
+                    {
+                        var fakeItem = new DicomDataset().NotValidated();
+                        // Add a couple of common child attributes based on the sequence
+                        fakeItem.AddOrUpdate(DicomTag.ReferencedSOPClassUID, DicomUID.Generate());
+                        fakeItem.AddOrUpdate(DicomTag.ReferencedSOPInstanceUID, DicomUID.Generate());
+                        sequence.Items.Add(fakeItem);
+                    }
+
+                    continue;
+                }
+
+                switch (item.ValueRepresentation.Code)
+                {
+                    case DicomVRCode.DA:
+                        dataset.AddOrUpdate(item.Tag, _faker.Date.Past());
+                        break;
+                    case DicomVRCode.TM:
+                        dataset.AddOrUpdate(item.Tag, _faker.Date.Past());
+                        break;
+                    case DicomVRCode.SH:
+                        dataset.AddOrUpdate(item.Tag, _faker.Random.String2(10));
+                        break;
+                    case DicomVRCode.LO:
+                        dataset.AddOrUpdate(item.Tag, _faker.Random.String2(16));
+                        break;
+                    case DicomVRCode.CS:
+                        dataset.AddOrUpdate(item.Tag, _faker.PickRandom("CT", "MR", "US", "XR", "PT"));
+                        break;
+                    case DicomVRCode.PN:
+                        dataset.AddOrUpdate(item.Tag, $"{_faker.Name.LastName()}^{_faker.Name.FirstName()}");
+                        break;
+                    case DicomVRCode.UI:
+                        dataset.AddOrUpdate(item.Tag, DicomUID.Generate());
+                        break;
+                    case DicomVRCode.IS:
+                        dataset.AddOrUpdate(item.Tag, _faker.Random.Number(0, 1000));
+                        break;
+                    default:
+                        break;
+                }
+            }
         }
     }
 }
