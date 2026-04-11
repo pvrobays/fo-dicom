@@ -74,6 +74,14 @@ namespace FellowOakDicom.DicomWeb
         
         public DicomQidoRequestOptions Options { get; }
 
+        /// <summary>
+        /// If true, the client requested that all available attributes be included in the response
+        /// (i.e. <c>includefield=all</c> was present in the query string).
+        /// The provider is responsible for interpreting this and returning all attributes it has available.
+        /// Per PS3.18 Section 8.3.4.3, this parameter is mutually exclusive with any other includefield values.
+        /// </summary>
+        public bool IncludeAllFields { get; set; }
+
         public DicomQueryRetrieveLevel Level
         {
             get => Dataset.GetSingleValueOrDefault(DicomTag.QueryRetrieveLevel, DicomQueryRetrieveLevel.NotApplicable);

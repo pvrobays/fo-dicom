@@ -1012,15 +1012,11 @@ namespace FellowOakDicom.Tests.DicomWeb
 
         #endregion
 
-        #region Regression — existing includefield and match still work
+        #region includefield=all
 
         [FactForNetCore]
-        public async Task HandleQidoStudiesRequest_IncludeFieldAll_StillWorks()
+        public async Task HandleQidoStudiesRequest_IncludeFieldAll_Returns200()
         {
-            // includefield=all should not break (it doesn't contain '.' and is not SQ-typed)
-            // Note: "all" is handled by TryParseByKeywordOrTag failing, but currently that throws.
-            // This test documents the current behavior: includefield=all returns 400 because
-            // "all" is not a valid DICOM keyword. This is a known TODO.
             var service = new TestDicomWebService((req, ct) =>
                 Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse()));
 
@@ -1031,9 +1027,133 @@ namespace FellowOakDicom.Tests.DicomWeb
 
             await service.HandleQidoStudiesRequestAsync(context);
 
-            // "all" can't be parsed as a tag, so 400 is expected
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_IncludeFieldAll_SetsIncludeAllFieldsTrue()
+        {
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["includefield"] = "all"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.True(capturedRequest.IncludeAllFields);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_IncludeFieldAll_CaseInsensitive()
+        {
+            // Per DICOM spec the keyword is lowercase "all", but be lenient
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["includefield"] = "ALL"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.True(capturedRequest.IncludeAllFields);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_IncludeFieldAll_WithMatchParams_Returns200()
+        {
+            // Match params (e.g. PatientID=12345) are orthogonal to includefield=all
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["includefield"] = "all",
+                ["PatientID"] = "12345"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.NotNull(capturedRequest);
+            Assert.True(capturedRequest.IncludeAllFields);
+            Assert.Equal("12345", capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.PatientID, string.Empty));
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_IncludeFieldAll_WithOtherCsvField_Returns400()
+        {
+            // includefield=all,PatientName — "all" must not be combined with other includefield values
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse()));
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["includefield"] = "all,PatientName"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
             Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_IncludeFieldAll_WithOtherSeparateParam_Returns400()
+        {
+            // includefield=all&includefield=PatientName — strict: "all" must be the only includefield
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse()));
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                // ASP.NET Core merges repeated includefield keys into a multi-value StringValues
+                ["includefield"] = new StringValues(new[] { "all", "PatientName" })
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_DefaultRequest_IncludeAllFieldsIsFalse()
+        {
+            DicomQidoRequest capturedRequest = null;
+            var service = new TestDicomWebService((req, ct) =>
+            {
+                capturedRequest = req;
+                return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+            });
+
+            var context = BuildHttpContext();
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.NotNull(capturedRequest);
+            Assert.False(capturedRequest.IncludeAllFields);
+        }
+
+        #endregion
+
+        #region Regression — existing includefield and match still work
 
         [FactForNetCore]
         public async Task HandleQidoStudiesRequest_StandardMatchAndIncludeField_StillWorkTogether()

@@ -151,7 +151,22 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
                 if (key.Equals("includefield", StringComparison.OrdinalIgnoreCase))
                 {
-                    foreach (string value in stringValues.SelectMany(sv => sv.Split(',')).ToList())
+                    var includeValues = stringValues.SelectMany(sv => sv.Split(',')).ToList();
+
+                    // Per PS3.18 Section 8.3.4.3: "all" is mutually exclusive with other includefield values
+                    var hasAll = includeValues.Any(v => v.Equals("all", StringComparison.OrdinalIgnoreCase));
+                    if (hasAll)
+                    {
+                        if (includeValues.Count > 1)
+                        {
+                            throw new InvalidOperationException(
+                                "includefield=all must not be combined with other includefield values (PS3.18 Section 8.3.4.3)");
+                        }
+                        dicomRequest.IncludeAllFields = true;
+                        continue;
+                    }
+
+                    foreach (string value in includeValues)
                     {
                         if (value.Contains('.'))
                         {
@@ -165,8 +180,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                         {
                             //TODO PJ: Log that the key could not be mapped to a DICOM tag
                             //TODO PJ: depending on a setting, throw or just continue?
-                            throw new InvalidOperationException($"Could not map includefield '{key}' to a DICOM tag");
-                            // continue;
+                            throw new InvalidOperationException($"Could not map includefield '{value}' to a DICOM tag");
                         }
                         if (includeTag.DictionaryEntry.ValueRepresentations.Contains(DicomVR.SQ))
                         {
