@@ -250,8 +250,13 @@ namespace FellowOakDicom
         /// <param name="tag">the out parameter which represents the DicomTag. Will be null if the parsing failed</param>
         /// <returns>Whether the parsing was successful or not</returns>
         public static bool TryParseByKeywordOrTag(string tagOrKeywordString, out DicomTag tag) {
-            //TODO PJ: add tests for this method
             //TODO PJ: also allow for '(gggg,eeee)' format?
+            if (string.IsNullOrEmpty(tagOrKeywordString))
+            {
+                tag = null;
+                return false;
+            }
+
             if (Regex.IsMatch(tagOrKeywordString, @"\A\b[0-9a-fA-F]+\b\Z"))
             {
                 var group = Convert.ToUInt16(tagOrKeywordString.Substring(0, 4), 16);
@@ -260,16 +265,13 @@ namespace FellowOakDicom
                 return true;
             }
 
-            try
+            tag = DicomDictionary.Default[tagOrKeywordString];
+            if (tag == null)
             {
-                tag = DicomDictionary.Default[tagOrKeywordString];
-                return true;
-            }
-            catch (Exception)
-            {
-                tag = null;
                 return false;
             }
+
+            return true;
         }
 
     }
