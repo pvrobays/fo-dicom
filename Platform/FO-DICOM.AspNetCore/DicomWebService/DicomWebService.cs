@@ -57,6 +57,22 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// </summary>
         protected virtual bool FormatJsonIndented => false;
 
+        /// <summary>
+        /// Whether an unrecognized QIDO-RS query parameter or <c>includefield</c> value should
+        /// cause the entire request to fail with HTTP 400 Bad Request.
+        /// <para>
+        /// When <c>true</c> (default), any query string key or includefield value that cannot be
+        /// resolved to a known DICOM tag throws an exception, which is surfaced to the client as
+        /// a 400 response. This is the strictest standards-compliant behaviour.
+        /// </para>
+        /// <para>
+        /// When <c>false</c>, unrecognized parameters are silently skipped and the request
+        /// continues with the remaining valid parameters. Override and return <c>false</c> to
+        /// allow lenient clients or vendor-specific extensions without breaking queries.
+        /// </para>
+        /// </summary>
+        protected virtual bool StrictQueryParameterParsing => true;
+
         public async Task HandleQidoStudiesRequestAsync(HttpContext context)
         {
             var cancellationToken = context.RequestAborted;
@@ -143,7 +159,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             DicomQidoRequest request;
             try
             {
-                request = QueryToDicomDatasetMapper.Map(level, context.Request.Query);
+                request = QueryToDicomDatasetMapper.Map(level, context.Request.Query, StrictQueryParameterParsing);
 
                 // Inject route-scoped UIDs as match constraints.
                 // These come from URL path templates (e.g. /studies/{studyInstanceUID}/series)

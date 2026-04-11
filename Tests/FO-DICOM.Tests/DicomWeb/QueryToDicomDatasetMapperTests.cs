@@ -457,6 +457,79 @@ namespace FellowOakDicom.Tests.DicomWeb
 
         #endregion
 
+        #region strictParsing parameter
+
+        [FactForNetCore]
+        public void Map_UnknownQueryParam_StrictMode_Throws()
+        {
+            // Default (strictParsing = true): unknown param throws
+            Assert.Throws<InvalidOperationException>(() =>
+                QueryToDicomDatasetMapper.Map(DicomQueryRetrieveLevel.Study,
+                    Q(new Dictionary<string, StringValues> { ["NotADicomKeyword"] = "value" }),
+                    strictParsing: true));
+        }
+
+        [FactForNetCore]
+        public void Map_UnknownQueryParam_LenientMode_IsSkipped()
+        {
+            // Lenient (strictParsing = false): unknown param is silently skipped; valid ones still work
+            var request = QueryToDicomDatasetMapper.Map(DicomQueryRetrieveLevel.Study,
+                Q(new Dictionary<string, StringValues>
+                {
+                    ["NotADicomKeyword"] = "shouldBeIgnored",
+                    ["PatientID"] = "12345"
+                }),
+                strictParsing: false);
+
+            Assert.Equal("12345", request.Dataset.GetSingleValueOrDefault(DicomTag.PatientID, string.Empty));
+        }
+
+        [FactForNetCore]
+        public void Map_UnknownIncludeField_StrictMode_Throws()
+        {
+            Assert.Throws<InvalidOperationException>(() =>
+                QueryToDicomDatasetMapper.Map(DicomQueryRetrieveLevel.Study,
+                    Q(new Dictionary<string, StringValues> { ["includefield"] = "NotADicomTag" }),
+                    strictParsing: true));
+        }
+
+        [FactForNetCore]
+        public void Map_UnknownIncludeField_LenientMode_IsSkipped()
+        {
+            // Unknown includefield is skipped; a valid one in the same CSV is still added
+            var request = QueryToDicomDatasetMapper.Map(DicomQueryRetrieveLevel.Study,
+                Q(new Dictionary<string, StringValues>
+                {
+                    ["includefield"] = "NotADicomTag,ReferringPhysicianName"
+                }),
+                strictParsing: false);
+
+            // The invalid value was skipped, but the valid one was applied
+            Assert.True(request.Dataset.Contains(DicomTag.ReferringPhysicianName));
+        }
+
+        [FactForNetCore]
+        public void Map_InvalidLimitOrOffset_AlwaysThrows_RegardlessOfStrictMode()
+        {
+            // Structural errors (bad limit/offset) always throw even in lenient mode
+            Assert.Throws<InvalidOperationException>(() =>
+                QueryToDicomDatasetMapper.Map(DicomQueryRetrieveLevel.Study,
+                    Q(new Dictionary<string, StringValues> { ["limit"] = "notanumber" }),
+                    strictParsing: false));
+        }
+
+        [FactForNetCore]
+        public void Map_InvalidIncludeFieldAllCombination_AlwaysThrows_RegardlessOfStrictMode()
+        {
+            // includefield=all combined with other values is a structural error, always throws
+            Assert.Throws<InvalidOperationException>(() =>
+                QueryToDicomDatasetMapper.Map(DicomQueryRetrieveLevel.Study,
+                    Q(new Dictionary<string, StringValues> { ["includefield"] = "all,PatientName" }),
+                    strictParsing: false));
+        }
+
+        #endregion
+
         #region Level propagation
 
         [FactForNetCore]

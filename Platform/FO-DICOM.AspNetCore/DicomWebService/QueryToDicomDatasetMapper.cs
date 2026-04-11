@@ -34,12 +34,21 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// </summary>
         /// <param name="level">The query/retrieve level for the request.</param>
         /// <param name="query">The parsed query string from the HTTP request.</param>
+        /// <param name="strictParsing">
+        /// When <c>true</c> (default), an unrecognized query parameter or includefield value
+        /// throws an <see cref="InvalidOperationException"/>, resulting in a 400 response.
+        /// When <c>false</c>, unrecognized parameters are silently skipped.
+        /// Note: structurally invalid values (bad limit/offset, malformed dot-notation paths,
+        /// invalid <c>includefield=all</c> combinations) always throw regardless of this flag.
+        /// </param>
         /// <returns>A fully populated <see cref="DicomQidoRequest"/>.</returns>
         /// <exception cref="InvalidOperationException">
-        /// Thrown when a query parameter value is invalid (e.g. non-numeric limit/offset,
-        /// unknown DICOM keyword, or malformed dot-notation path).
+        /// Thrown when a query parameter value is structurally invalid (e.g. non-numeric
+        /// limit/offset, malformed dot-notation path, or invalid includefield=all combination).
+        /// Also thrown for unknown tags when <paramref name="strictParsing"/> is <c>true</c>.
         /// </exception>
-        internal static DicomQidoRequest Map(DicomQueryRetrieveLevel level, IQueryCollection query)
+        internal static DicomQidoRequest Map(DicomQueryRetrieveLevel level, IQueryCollection query,
+            bool strictParsing = true)
         {
             var isFuzzyMatching = ParseBoolean(query, "fuzzymatching");
             if (!TryParseInt(query, "limit", out var limit))
@@ -97,7 +106,9 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
                         if (!DicomTag.TryParseByKeywordOrTag(value, out var includeTag))
                         {
-                            throw new InvalidOperationException($"Could not map includefield '{value}' to a DICOM tag");
+                            if (strictParsing)
+                                throw new InvalidOperationException($"Could not map includefield '{value}' to a DICOM tag");
+                            continue;
                         }
                         if (includeTag.DictionaryEntry.ValueRepresentations.Contains(DicomVR.SQ))
                         {
@@ -121,7 +132,9 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
                 if (!DicomTag.TryParseByKeywordOrTag(key, out var dicomTag))
                 {
-                    throw new InvalidOperationException($"Could not map query parameter '{key}' to a DICOM tag");
+                    if (strictParsing)
+                        throw new InvalidOperationException($"Could not map query parameter '{key}' to a DICOM tag");
+                    continue;
                 }
 
                 if (dicomTag.DictionaryEntry.ValueRepresentations.Contains(DicomVR.SQ))

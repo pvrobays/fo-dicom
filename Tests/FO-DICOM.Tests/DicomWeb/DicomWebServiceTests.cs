@@ -95,18 +95,22 @@ namespace FellowOakDicom.Tests.DicomWeb
             public ConfigurableDicomWebService(
                 System.Func<DicomQidoRequest, CancellationToken, Task<IDicomQidoResponse>> handler,
                 bool writeTagsAsKeywords = false,
-                bool formatJsonIndented = false)
+                bool formatJsonIndented = false,
+                bool strictQueryParameterParsing = true)
             {
                 _handler = handler;
                 WriteTagsAsKeywordsOverride = writeTagsAsKeywords;
                 FormatJsonIndentedOverride = formatJsonIndented;
+                StrictQueryParameterParsingOverride = strictQueryParameterParsing;
             }
 
             private bool WriteTagsAsKeywordsOverride { get; }
             private bool FormatJsonIndentedOverride { get; }
+            private bool StrictQueryParameterParsingOverride { get; }
 
             protected override bool WriteTagsAsKeywords => WriteTagsAsKeywordsOverride;
             protected override bool FormatJsonIndented => FormatJsonIndentedOverride;
+            protected override bool StrictQueryParameterParsing => StrictQueryParameterParsingOverride;
 
             public Task<IDicomQidoResponse> OnQidoRequestAsync(DicomQidoRequest request, CancellationToken cancellationToken)
                 => _handler(request, cancellationToken);
@@ -1911,6 +1915,97 @@ namespace FellowOakDicom.Tests.DicomWeb
             var body = await ReadResponseBodyAsync(context);
             Assert.Contains("\"PatientID\"", body);
             Assert.Contains("\n", body);
+        }
+
+        #endregion
+
+        #region StrictQueryParameterParsing
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_StrictMode_UnknownParam_Returns400()
+        {
+            // Default behaviour: unknown query param → 400
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse()));
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["NotADicomTag"] = "value"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_LenientMode_UnknownParam_Returns200()
+        {
+            // Lenient mode: unknown query param is skipped → 200
+            DicomQidoRequest capturedRequest = null;
+            var service = new ConfigurableDicomWebService(
+                (req, ct) =>
+                {
+                    capturedRequest = req;
+                    return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+                },
+                strictQueryParameterParsing: false);
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["NotADicomTag"] = "shouldBeIgnored",
+                ["PatientID"] = "12345"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.NotNull(capturedRequest);
+            // The valid param was still applied
+            Assert.Equal("12345", capturedRequest.Dataset.GetSingleValueOrDefault(DicomTag.PatientID, string.Empty));
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_LenientMode_UnknownIncludeField_Returns200()
+        {
+            // Lenient mode: unknown includefield is skipped → 200; valid includefield still applied
+            DicomQidoRequest capturedRequest = null;
+            var service = new ConfigurableDicomWebService(
+                (req, ct) =>
+                {
+                    capturedRequest = req;
+                    return Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+                },
+                strictQueryParameterParsing: false);
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["includefield"] = "NotADicomTag,ReferringPhysicianName"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.NotNull(capturedRequest);
+            Assert.True(capturedRequest.Dataset.Contains(DicomTag.ReferringPhysicianName));
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoStudiesRequest_StrictMode_IsDefault()
+        {
+            // TestDicomWebService does not override StrictQueryParameterParsing, so it defaults to true
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse()));
+
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["NotADicomTag"] = "value"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            // Strict mode (default) → 400
+            Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         }
 
         #endregion
