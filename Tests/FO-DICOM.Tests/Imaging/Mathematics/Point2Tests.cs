@@ -1,10 +1,9 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
 using FellowOakDicom.Imaging.Mathematics;
 using FellowOakDicom.Tests.Helpers;
-using System.Runtime.Serialization;
 using Xunit;
 
 namespace FellowOakDicom.Tests.Imaging.Mathematics

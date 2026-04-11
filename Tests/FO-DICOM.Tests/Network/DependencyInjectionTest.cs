@@ -1,10 +1,12 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
 using System;
 using System.Text;
 using System.Threading.Tasks;
+using FellowOakDicom.Imaging;
+using FellowOakDicom.Imaging.Codec;
 using FellowOakDicom.Network;
 using FellowOakDicom.Network.Client;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,7 +30,6 @@ namespace FellowOakDicom.Tests.Network
 #endif
         public async Task DependencyPropertyHasValue()
         {
-            var port = Ports.GetNext();
             var serviceCollection = new ServiceCollection()
                 .AddFellowOakDicom()
                 .AddTransient<ISomeInterface, SomeInterfaceImplementation>();
@@ -36,9 +37,9 @@ namespace FellowOakDicom.Tests.Network
             var dicomServerFactory = serviceProvider.GetRequiredService<IDicomServerFactory>();
             var dicomClientFactory = serviceProvider.GetRequiredService<IDicomClientFactory>();
 
-            using var server = dicomServerFactory.Create<EchoProviderWithDependency>(port);
+            using var server = dicomServerFactory.Create<EchoProviderWithDependency>(0);
 
-            var client = dicomClientFactory.Create("127.0.0.1", port, false, "SCU", "ANY-SCP");
+            var client = dicomClientFactory.Create("127.0.0.1", server.Port, false, "SCU", "ANY-SCP");
 
             string value = string.Empty;
             var request = new DicomCEchoRequest();
@@ -53,6 +54,36 @@ namespace FellowOakDicom.Tests.Network
             Assert.False(string.IsNullOrEmpty(value));
         }
 
+        [Fact]
+        public void DependencyShouldNotOverwrite()
+        {
+            var serviceCollection = new ServiceCollection()
+                .AddFellowOakDicom()
+                .AddImageManager<MyCustomImageManager>()
+                .AddTranscoderManager<MyCustomTranscoderManager>()
+                .AddFellowOakDicom();
+            var serviceProvider = serviceCollection.BuildServiceProvider();
+
+            var imageService = serviceProvider.GetRequiredService<IImageManager>();
+            var transcoderService = serviceProvider.GetRequiredService<ITranscoderManager>();
+            Assert.IsType<MyCustomImageManager>(imageService);
+            Assert.IsType<MyCustomTranscoderManager>(transcoderService);
+        }
+
+    }
+
+
+    public class MyCustomImageManager : IImageManager
+    {
+        public IImage CreateImage(int width, int height) => throw new NotImplementedException();
+    }
+
+    public class MyCustomTranscoderManager : ITranscoderManager
+    {
+        public bool CanTranscode(DicomTransferSyntax inSyntax, DicomTransferSyntax outSyntax) => throw new NotImplementedException();
+        public IDicomCodec GetCodec(DicomTransferSyntax syntax) => throw new NotImplementedException();
+        public bool HasCodec(DicomTransferSyntax syntax) => throw new NotImplementedException();
+        public void LoadCodecs(string path = null, string search = null) => throw new NotImplementedException();
     }
 
 

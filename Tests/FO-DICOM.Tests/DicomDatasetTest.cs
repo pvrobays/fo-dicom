@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -642,6 +642,38 @@ namespace FellowOakDicom.Tests
         }
 
         [Fact]
+        public void AddOrUpdate_Sequence_ViaDicomdatasets()
+        {
+            var dataset = new DicomDataset();
+            dataset.AddOrUpdate(DicomTag.ReferencedStudySequence,
+                new DicomDataset { { DicomTag.ReferencedSOPClassUID, DicomUID.CTImageStorage }, { DicomTag.ReferencedSOPInstanceUID, DicomUID.Generate() } },
+                new DicomDataset { { DicomTag.ReferencedSOPClassUID, DicomUID.CTImageStorage }, { DicomTag.ReferencedSOPInstanceUID, DicomUID.Generate() } }
+                    );
+
+            var refSequence = dataset.GetSequence(DicomTag.ReferencedStudySequence);
+            Assert.NotNull(refSequence);
+            Assert.Equal(2, refSequence.Count());
+            Assert.Equal(DicomUID.CTImageStorage, refSequence.ElementAt(0).GetSingleValue<DicomUID>(DicomTag.ReferencedSOPClassUID));
+        }
+
+        [Fact]
+        public void AddOrUpdate_Sequence_ViaDicomsequence()
+        {
+            var seq = new DicomSequence(DicomTag.ReferencedStudySequence,
+                new DicomDataset { { DicomTag.ReferencedSOPClassUID, DicomUID.CTImageStorage }, { DicomTag.ReferencedSOPInstanceUID, DicomUID.Generate() } },
+                new DicomDataset { { DicomTag.ReferencedSOPClassUID, DicomUID.CTImageStorage }, { DicomTag.ReferencedSOPInstanceUID, DicomUID.Generate() } }
+                    );
+
+            var dataset = new DicomDataset();
+            dataset.AddOrUpdate(DicomTag.ReferencedStudySequence, seq);
+
+            var refSequence = dataset.GetSequence(DicomTag.ReferencedStudySequence);
+            Assert.NotNull(refSequence);
+            Assert.Equal(2, refSequence.Count());
+            Assert.Equal(DicomUID.CTImageStorage, refSequence.ElementAt(0).GetSingleValue<DicomUID>(DicomTag.ReferencedSOPClassUID));
+        }
+
+        [Fact]
         public void AddOrUpdate_PrivateTagWithoutExplicitVR_ShouldThrow()
         {
             var dataset = new DicomDataset();
@@ -900,6 +932,21 @@ namespace FellowOakDicom.Tests
                 false // do not validate, since the VR violation is intended.
             );
             Assert.False(dataset.TryGetSingleValue(DicomTag.SeriesNumber, out int _));
+        }
+        
+        [Fact]
+        public void FunctionalGroupValues_ShouldNotCrashWithEmptySharedFunctionalGroupsSequence()
+        {
+            //Arrange
+            var dataset = new DicomDataset();
+            var sequence = new DicomSequence(DicomTag.SharedFunctionalGroupsSequence);
+            dataset.Add(sequence);
+            
+            //Act
+            var result = dataset.FunctionalGroupValues(0);
+            
+            //Assert
+            Assert.Empty(result);
         }
 
         #endregion

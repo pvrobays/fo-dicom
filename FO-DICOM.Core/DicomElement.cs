@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2024 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -199,10 +199,7 @@ namespace FellowOakDicom
             return bytes;
         }
 
-        protected override void ValidateString()
-        {
-            ValueRepresentation?.ValidateString(_value);
-        }
+        protected override void ValidateString() => ValueRepresentation?.ValidateString(StringValue);
 
         public override bool Equals(DicomElement other)
         {
@@ -455,15 +452,12 @@ namespace FellowOakDicom
                 }
                 else
                 {
-                    _values = new DateTime[vals.Length];
-                    for (int i = 0; i < vals.Length; i++)
-                    {
-                        _values[i] = DateTime.ParseExact(
-                            vals[i],
+                    _values = vals.Select(val => DateTime.ParseExact(
+                            val,
                             DateFormats,
                             _dicomDateElementFormat,
-                            _dicomDateElementStyle);
-                    }
+                            _dicomDateElementStyle))
+                        .ToArray();
                 }
             }
 
@@ -810,18 +804,15 @@ namespace FellowOakDicom
         {
             get
             {
-                if (_formats == null)
+                _formats ??= new[]
                 {
-                    _formats = new[]
-                                   {
-                                        "yyyyMMdd",
-                                        "yyyy.MM.dd",
-                                        "yyyy/MM/dd",
-                                        "yyyy",
-                                        "yyyyMM",
-                                        "yyyy.MM"
-                                   };
-                }
+                    "yyyyMMdd",
+                    "yyyy.MM.dd",
+                    "yyyy/MM/dd",
+                    "yyyy",
+                    "yyyyMM",
+                    "yyyy.MM"
+                };
                 return _formats;
             }
         }
@@ -876,7 +867,8 @@ namespace FellowOakDicom
             {
                 _values =
                     base.Get<string[]>()
-                        .Select(x => decimal.Parse(x, NumberStyles.Any, CultureInfo.InvariantCulture))
+                        // #1296 some invalid files have "," as decimal separator. because a comma is no valid character in DS, this cannot be misinterpretated and it is obvious to replace it by "."
+                        .Select(x => decimal.Parse(x.Replace(',','.'), NumberStyles.Any, CultureInfo.InvariantCulture))
                         .ToArray();
             }
 
@@ -936,12 +928,12 @@ namespace FellowOakDicom
         #region Public Constructors
 
         public DicomDateTime(DicomTag tag, params DateTime[] values)
-            : base(tag, PrivateDateFormats, values)
+            : base(tag, PrivateDateFormats, values.Select(x => FormatToString(x)).ToArray())
         {
         }
 
         public DicomDateTime(DicomTag tag, DicomDateRange range)
-            : base(tag, PrivateDateFormats, range)
+            : base(tag, PrivateDateFormats, FormatRangeToString(range))
         {
         }
 
@@ -957,9 +949,26 @@ namespace FellowOakDicom
 
         #endregion
 
+        #region Private Methods
+
+        private static string FormatToString(DateTime value) =>
+            value.Millisecond > 0
+                ? value.ToString(_formatWithFraction).Replace(":", string.Empty).TrimEnd('0')
+                : value.ToString(_formatWithoutFraction).Replace(":", string.Empty);
+
+        private static string FormatRangeToString(DicomDateRange range) =>
+            range.Minimum.Millisecond > 0 || range.Maximum.Millisecond > 0
+                ? range.ToString(_formatWithFraction).Replace(":", string.Empty)
+                : range.ToString(_formatWithoutFraction).Replace(":", string.Empty);
+
+        #endregion
+
         #region Public Properties
 
         public override DicomVR ValueRepresentation => DicomVR.DT;
+
+        private static readonly string _formatWithFraction = "yyyyMMddHHmmss.ffffff";
+        private static readonly string _formatWithoutFraction = "yyyyMMddHHmmss";
 
         private static string[] _formats;
 
@@ -967,37 +976,34 @@ namespace FellowOakDicom
         {
             get
             {
-                if (_formats == null)
+                _formats ??= new[]
                 {
-                    _formats = new[]
-                    {
-                        "yyyyMMddHHmmss",
-                        "yyyyMMddHHmmsszzz",
-                        "yyyyMMddHHmmsszz",
-                        "yyyyMMddHHmmssz",
-                        "yyyyMMddHHmmss.ffffff",
-                        "yyyyMMddHHmmss.fffff",
-                        "yyyyMMddHHmmss.ffff",
-                        "yyyyMMddHHmmss.fff",
-                        "yyyyMMddHHmmss.ff",
-                        "yyyyMMddHHmmss.f",
-                        "yyyyMMddHHmm",
-                        "yyyyMMddHH",
-                        "yyyyMMdd",
-                        "yyyyMM",
-                        "yyyy",
-                        "yyyyMMddHHmmss.ffffffzzz",
-                        "yyyyMMddHHmmss.fffffzzz",
-                        "yyyyMMddHHmmss.ffffzzz",
-                        "yyyyMMddHHmmss.fffzzz",
-                        "yyyyMMddHHmmss.ffzzz",
-                        "yyyyMMddHHmmss.fzzz",
-                        "yyyyMMddHHmmzzz",
-                        "yyyyMMddHHzzz",
-                        "yyyy.MM.dd",
-                        "yyyy/MM/dd"
-                    };
-                }
+                    "yyyyMMddHHmmss",
+                    "yyyyMMddHHmmsszzz",
+                    "yyyyMMddHHmmsszz",
+                    "yyyyMMddHHmmssz",
+                    "yyyyMMddHHmmss.ffffff",
+                    "yyyyMMddHHmmss.fffff",
+                    "yyyyMMddHHmmss.ffff",
+                    "yyyyMMddHHmmss.fff",
+                    "yyyyMMddHHmmss.ff",
+                    "yyyyMMddHHmmss.f",
+                    "yyyyMMddHHmm",
+                    "yyyyMMddHH",
+                    "yyyyMMdd",
+                    "yyyyMM",
+                    "yyyy",
+                    "yyyyMMddHHmmss.ffffffzzz",
+                    "yyyyMMddHHmmss.fffffzzz",
+                    "yyyyMMddHHmmss.ffffzzz",
+                    "yyyyMMddHHmmss.fffzzz",
+                    "yyyyMMddHHmmss.ffzzz",
+                    "yyyyMMddHHmmss.fzzz",
+                    "yyyyMMddHHmmzzz",
+                    "yyyyMMddHHzzz",
+                    "yyyy.MM.dd",
+                    "yyyy/MM/dd"
+                };
                 return _formats;
             }
         }
@@ -1681,12 +1687,12 @@ namespace FellowOakDicom
         #region Public Constructors
 
         public DicomTime(DicomTag tag, params DateTime[] values)
-            : base(tag, PrivateDateFormats, values)
+            : base(tag, PrivateDateFormats, values.Select(x => FormatToString(x)).ToArray())
         {
         }
 
         public DicomTime(DicomTag tag, DicomDateRange range)
-            : base(tag, PrivateDateFormats, range)
+            : base(tag, PrivateDateFormats, FormatRangeToString(range))
         {
         }
 
@@ -1702,59 +1708,72 @@ namespace FellowOakDicom
 
         #endregion
 
+        #region Private Methods
+
+        private static string FormatToString(DateTime value) =>
+            value.Millisecond > 0
+                ? value.ToString(_formatWithFraction).Replace(":", string.Empty).TrimEnd('0')
+                : value.ToString(_formatWithoutFraction).Replace(":", string.Empty);
+
+        private static string FormatRangeToString(DicomDateRange range) =>
+            range.Minimum.Millisecond > 0 || range.Maximum.Millisecond > 0
+                ? range.ToString(_formatWithFraction).Replace(":", string.Empty)
+                : range.ToString(_formatWithoutFraction).Replace(":", string.Empty);
+
+        #endregion
+
         #region Public Properties
 
         public override DicomVR ValueRepresentation => DicomVR.TM;
 
+        private static readonly string _formatWithFraction = "HHmmss.ffffff";
+        private static readonly string _formatWithoutFraction = "HHmmss";
         private static string[] _formats;
 
         private static string[] PrivateDateFormats
         {
             get
             {
-                if (_formats == null)
+                _formats ??= new[]
                 {
-                    _formats = new[]
-                                {
-                                    "HHmmss",
-                                    "HH",
-                                    "HHmm",
-                                    "HHmmssf",
-                                    "HHmmssff",
-                                    "HHmmssfff",
-                                    "HHmmssffff",
-                                    "HHmmssfffff",
-                                    "HHmmssffffff",
-                                    "HHmmss.f",
-                                    "HHmmss.ff",
-                                    "HHmmss.fff",
-                                    "HHmmss.ffff",
-                                    "HHmmss.fffff",
-                                    "HHmmss.ffffff",
-                                    "HH.mm",
-                                    "HH.mm.ss",
-                                    "HH.mm.ss.f",
-                                    "HH.mm.ss.ff",
-                                    "HH.mm.ss.fff",
-                                    "HH.mm.ss.ffff",
-                                    "HH.mm.ss.fffff",
-                                    "HH.mm.ss.ffffff",
-                                    "HH:mm",
-                                    "HH:mm:ss",
-                                    "HH:mm:ss:f",
-                                    "HH:mm:ss:ff",
-                                    "HH:mm:ss:fff",
-                                    "HH:mm:ss:ffff",
-                                    "HH:mm:ss:fffff",
-                                    "HH:mm:ss:ffffff",
-                                    "HH:mm:ss.f",
-                                    "HH:mm:ss.ff",
-                                    "HH:mm:ss.fff",
-                                    "HH:mm:ss.ffff",
-                                    "HH:mm:ss.fffff",
-                                    "HH:mm:ss.ffffff"
-                                };
-                }
+                    "HHmmss",
+                    "HH",
+                    "HHmm",
+                    "HHmmssf",
+                    "HHmmssff",
+                    "HHmmssfff",
+                    "HHmmssffff",
+                    "HHmmssfffff",
+                    "HHmmssffffff",
+                    "HHmmss.f",
+                    "HHmmss.ff",
+                    "HHmmss.fff",
+                    "HHmmss.ffff",
+                    "HHmmss.fffff",
+                    "HHmmss.ffffff",
+                    "HH.mm",
+                    "HH.mm.ss",
+                    "HH.mm.ss.f",
+                    "HH.mm.ss.ff",
+                    "HH.mm.ss.fff",
+                    "HH.mm.ss.ffff",
+                    "HH.mm.ss.fffff",
+                    "HH.mm.ss.ffffff",
+                    "HH:mm",
+                    "HH:mm:ss",
+                    "HH:mm:ss:f",
+                    "HH:mm:ss:ff",
+                    "HH:mm:ss:fff",
+                    "HH:mm:ss:ffff",
+                    "HH:mm:ss:fffff",
+                    "HH:mm:ss:ffffff",
+                    "HH:mm:ss.f",
+                    "HH:mm:ss.ff",
+                    "HH:mm:ss.fff",
+                    "HH:mm:ss.ffff",
+                    "HH:mm:ss.fffff",
+                    "HH:mm:ss.ffffff"
+                };
                 return _formats;
             }
         }

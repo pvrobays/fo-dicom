@@ -1,4 +1,7 @@
-﻿using System.Threading;
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
+// Licensed under the Microsoft Public License (MS-PL).
+
+using System.Threading;
 using System.Threading.Tasks;
 using FellowOakDicom.Network;
 using FellowOakDicom.Network.Client.Advanced.Association;
@@ -24,11 +27,10 @@ namespace FellowOakDicom.Tests.Bugs
         public async Task WhenInitialConnectionIsNeverClosed_DicomServerShouldCorrectlyImplementMaxClientsAllowed()
         {
             // Arrange
-            var port = Ports.GetNext();
             var cancellationToken = CancellationToken.None;
 
             using var server = DicomServerFactory.Create<DicomCEchoProvider>(
-                port,
+                0,
                 logger: _logger.IncludePrefix("Server"),
                 configure: o => o.MaxClientsAllowed = 2);
 

@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -49,6 +49,37 @@ namespace FellowOakDicom.Tests.Media
             var expected = dir.FileMetaInfo.GetSingleValue<DicomUID>(DicomTag.MediaStorageSOPInstanceUID).UID;
             var actual = dir.MediaStorageSOPInstanceUID.UID;
             Assert.Equal(expected, actual);
+        }
+
+        [Fact]
+        public async Task Open_DicomDir_WrongOffsets()
+        {
+            var dir = await DicomDirectory.OpenAsync(TestData.Resolve("DICOMDIR_GH1927"));
+
+            var patientRecord = dir.RootDirectoryRecord;
+            Assert.NotNull(patientRecord);
+            Assert.Equal("PATIENT", patientRecord.DirectoryRecordType);
+
+            var studyRecord = patientRecord.LowerLevelDirectoryRecord;
+            Assert.NotNull(studyRecord);
+            Assert.Equal("STUDY", studyRecord.DirectoryRecordType);
+            Assert.Equal(38, studyRecord.LowerLevelDirectoryRecordCollection.Count());
+
+            var series1Record = studyRecord.LowerLevelDirectoryRecord;
+            Assert.NotNull(series1Record);
+            Assert.Equal("SERIES", series1Record.DirectoryRecordType);
+            Assert.Single(series1Record.LowerLevelDirectoryRecordCollection);
+
+            var series2Record = series1Record.NextDirectoryRecord;
+            Assert.NotNull(series2Record);
+            Assert.Equal("SERIES", series2Record.DirectoryRecordType);
+            Assert.Equal(86, series2Record.LowerLevelDirectoryRecordCollection.Count());
+
+            var imageRecord = series1Record.LowerLevelDirectoryRecord;
+            Assert.NotNull(imageRecord);
+            Assert.Equal("IMAGE", imageRecord.DirectoryRecordType);
+
+            Assert.Null(imageRecord.LowerLevelDirectoryRecord);
         }
 
         [Fact]
@@ -116,8 +147,8 @@ namespace FellowOakDicom.Tests.Media
                 dicomFile.Dataset.AddOrUpdate(DicomTag.PatientName, patname);
             }
             // the name of the first image is slightly different
-            dicomFiles.First().Dataset.AddOrUpdate(DicomTag.PatientName, patname2);
-            dicomFiles.ElementAt(1).Dataset.AddOrUpdate(DicomTag.PatientName, patname3);
+            dicomFiles[0].Dataset.AddOrUpdate(DicomTag.PatientName, patname2);
+            dicomFiles[1].Dataset.AddOrUpdate(DicomTag.PatientName, patname3);
 
             // Create DICOM directory
             var dicomDir = new DicomDirectory();
@@ -150,9 +181,9 @@ namespace FellowOakDicom.Tests.Media
                 dicomFile.Dataset.AddOrUpdate(DicomTag.PatientName, patname);
             }
             // the name of the first image is slightly different
-            dicomFiles.First().Dataset.AddOrUpdate(DicomTag.PatientName, patname2);
-            dicomFiles.ElementAt(1).Dataset.AddOrUpdate(DicomTag.PatientName, patname3);
-            dicomFiles.ElementAt(2).Dataset.AddOrUpdate(DicomTag.PatientName, patname4);
+            dicomFiles[0].Dataset.AddOrUpdate(DicomTag.PatientName, patname2);
+            dicomFiles[1].Dataset.AddOrUpdate(DicomTag.PatientName, patname3);
+            dicomFiles[2].Dataset.AddOrUpdate(DicomTag.PatientName, patname4);
 
             // Create DICOM directory
             var dicomDir = new DicomDirectory();
@@ -222,7 +253,7 @@ namespace FellowOakDicom.Tests.Media
         }
 
 
-        private static IList<DicomFile> GetDicomFilesFromZip(string fileName)
+        private static List<DicomFile> GetDicomFilesFromZip(string fileName)
         {
             var dicomFiles = new List<DicomFile>();
 

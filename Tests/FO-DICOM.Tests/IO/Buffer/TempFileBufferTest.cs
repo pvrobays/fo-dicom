@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -42,7 +42,7 @@ namespace FellowOakDicom.Tests.IO.Buffer
             var expected = new ArraySegment<byte>(data, offset, count);
             var actual = new byte[count];
             buffer.GetByteRange(offset, count, actual);
-            Assert.Equal(expected, actual);
+            Assert.Equal(expected.ToArray(), actual);
         }
 
         [Fact]

@@ -1,8 +1,7 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
-using FellowOakDicom.Network.Tls;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Net;
@@ -57,6 +56,13 @@ namespace FellowOakDicom.Network
             return Task.FromResult(0);
         }
 
+        public int Port
+        {
+            get
+            {
+                return _listener.LocalEndpoint is IPEndPoint localEndPoint ? localEndPoint.Port : -1;
+            }
+        }
         /// <inheritdoc />
         public void Stop() => _listener.Stop();
 

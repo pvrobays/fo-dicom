@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -189,6 +189,22 @@ namespace FellowOakDicom.Tests.Imaging
 
             int originY = dataset.GetValueOrDefault<short>(new DicomTag(group, 0x0050), 0, 1);
             Assert.Equal(expected, originY);
+        }
+
+        [Fact]
+        public void OnlyReadOverlayFromEvenGroups()
+        {
+            var dicomFile = DicomFile.Open(TestData.Resolve("multiframe.dcm"));
+            var dataset = dicomFile.Dataset;
+            // Add a generic "overlay" tag in the dataset to simulate an overlay
+            dataset.AddOrUpdate(new DicomLongString(new DicomTag(0x6001, 0x0010), "Generic Data"));
+
+            var hasEmbeddedOverlay = DicomOverlayData.HasEmbeddedOverlays(dataset);
+            Assert.False(hasEmbeddedOverlay);
+
+            dataset.AddOrUpdate(new DicomLongString(new DicomTag(0x6002, 0x0010), "Generic Data"));
+            hasEmbeddedOverlay = DicomOverlayData.HasEmbeddedOverlays(dataset);
+            Assert.True(hasEmbeddedOverlay);
         }
 
     }

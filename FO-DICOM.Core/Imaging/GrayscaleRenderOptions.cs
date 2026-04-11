@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -120,19 +120,19 @@ namespace FellowOakDicom.Imaging
         /// Window Center
         /// </summary>
         /// <param name="dataset">Dataset to extract <see cref="GrayscaleRenderOptions"/> from</param>
-        /// <param name="frame">The 0-based framenumber for which the grayscale options should be extracted.</param>
+        /// <param name="frame">The zero-based frame index for which the grayscale options should be extracted. Use 0 in case of a single-framed image.</param>
         /// <returns>New grayscale render options instance</returns>
         public static GrayscaleRenderOptions FromDataset(DicomDataset dataset, int frame)
         {
             GrayscaleRenderOptions grayscaleRenderOptions;
-            if (dataset.TryGetValue(DicomTag.WindowWidth, 0, out double windowWidth) && windowWidth >= 1.0
+            if (dataset.TryGetValue(DicomTag.WindowWidth, 0, out double windowWidth) && windowWidth > 0
                 && dataset.TryGetValue(DicomTag.WindowCenter, 0, out double _))
             {
                 // If dataset contains WindowWidth and WindowCenter valid attributes used initially for the grayscale options
                 grayscaleRenderOptions = FromWindowLevel(dataset, frame);
             }
-            else if (dataset.FunctionalGroupValues(frame) is { } functionalGroupValues 
-                     && functionalGroupValues.TryGetValue(DicomTag.WindowWidth, 0, out double functionalWindowWidth) && functionalWindowWidth >= 1.0
+            else if (dataset.FunctionalGroupValues(frame) is { } functionalGroupValues
+                     && functionalGroupValues.TryGetValue(DicomTag.WindowWidth, 0, out double functionalWindowWidth) && functionalWindowWidth > 0
                      && functionalGroupValues.TryGetValue(DicomTag.WindowCenter, 0, out double _))
             {
                 grayscaleRenderOptions = FromFunctionalWindowLevel(dataset, frame);
@@ -149,7 +149,7 @@ namespace FellowOakDicom.Imaging
             {
                 // If reached here, minimum and maximum pixel values calculated from pixels data to calculate
                 // WindowWidth and WindowCenter
-                grayscaleRenderOptions = FromMinMax(dataset);    
+                grayscaleRenderOptions = FromMinMax(dataset);
             }
 
             /*
@@ -165,7 +165,7 @@ namespace FellowOakDicom.Imaging
                 (or more specifically prior to application of the VOI LUT Module attributes to the stored pixel data).
             */
             if (grayscaleRenderOptions.ModalityLUT != null
-                && dataset.TryGetSingleValue(DicomTag.SOPClassUID, out DicomUID sopClassUID) 
+                && dataset.TryGetSingleValue(DicomTag.SOPClassUID, out DicomUID sopClassUID)
                 && (sopClassUID == DicomUID.XRayAngiographicImageStorage
                 || sopClassUID == DicomUID.XRayRadiofluoroscopicImageStorage
                 || sopClassUID == DicomUID.XRayAngiographicBiPlaneImageStorageRETIRED))
@@ -180,6 +180,7 @@ namespace FellowOakDicom.Imaging
         /// Create grayscale render options based on window level data.
         /// </summary>
         /// <param name="dataset">DICOM dataset from which render options should be obtained.</param>
+        /// <param name="frame">Zero-based frame index. Use 0 in case of a single-framed image.</param>
         /// <returns>Grayscale render options based on window level data.</returns>
         public static GrayscaleRenderOptions FromWindowLevel(DicomDataset dataset, int frame = 0)
         {
@@ -191,34 +192,44 @@ namespace FellowOakDicom.Imaging
 
             var functional = dataset.FunctionalGroupValues(frame);
             var bits = BitDepth.FromDataset(dataset);
+
+            // #1891 VOI LUT Function with empty value causes a crash
+            if (!functional.TryGetValue(DicomTag.VOILUTFunction, 0, out string voiLutFunction)
+            && !dataset.TryGetValue(DicomTag.VOILUTFunction, 0, out voiLutFunction))
+            {
+                voiLutFunction = "LINEAR";
+            }
+
+            // #1905 LINEAR function requires a windowWidth of >= 1. So if windowWidth is lower, then LINEAR_EXACT has to be applied
+            if (windowWidth < 1.0 && voiLutFunction == "LINEAR")
+            {
+                voiLutFunction = "LINEAR_EXACT";
+            }
+
             var options = new GrayscaleRenderOptions(bits)
             {
-                RescaleSlope = dataset.Contains(DicomTag.RescaleSlope)
-                    ? dataset.GetSingleValue<double>(DicomTag.RescaleSlope)
-                    : functional.Contains(DicomTag.RescaleSlope)
-                    ? functional.GetSingleValue<double>(DicomTag.RescaleSlope)
-                    : 1.0,
-                RescaleIntercept = dataset.Contains(DicomTag.RescaleIntercept)
-                    ? dataset.GetSingleValue<double>(DicomTag.RescaleIntercept)
-                    : functional.Contains(DicomTag.RescaleIntercept)
-                    ? functional.GetSingleValue<double>(DicomTag.RescaleIntercept)
-                    : 0.0,
-
                 WindowWidth = windowWidth,
                 WindowCenter = windowCenter,
-
-                VOILUTFunction = dataset.Contains(DicomTag.VOILUTFunction)
-                    ? dataset.GetSingleValue<string>(DicomTag.VOILUTFunction)
-                    : functional.Contains(DicomTag.VOILUTFunction)
-                    ? functional.GetSingleValue<string>(DicomTag.VOILUTFunction)
-                    : "LINEAR",
-
+                VOILUTFunction = voiLutFunction,
                 ColorMap = GetColorMap(dataset)
             };
 
             if (dataset.TryGetNonEmptySequence(DicomTag.ModalityLUTSequence, out DicomSequence modalityLutSequence))
             {
                 options.ModalityLUT = new ModalitySequenceLUT(modalityLutSequence.First(), bits.IsSigned);
+                options.RescaleSlope = 1.0;
+                options.RescaleIntercept = 0.0;
+            }
+            else
+            {
+                options.RescaleSlope = dataset.TryGetSingleValue<double>(DicomTag.RescaleSlope, out var slope)
+                                       || functional.TryGetSingleValue<double>(DicomTag.RescaleSlope, out slope)
+                    ? slope
+                    : 1.0;
+                options.RescaleIntercept = dataset.TryGetSingleValue<double>(DicomTag.RescaleIntercept, out var intercept)
+                                           || functional.TryGetSingleValue(DicomTag.RescaleIntercept, out intercept)
+                    ? intercept
+                    : 0.0;
             }
 
             if (dataset.TryGetNonEmptySequence(DicomTag.VOILUTSequence, out DicomSequence voiLutSequence))
@@ -234,7 +245,7 @@ namespace FellowOakDicom.Imaging
         /// Create grayscale render options based on window level data stored in functional groups in enhanced multiframe images
         /// </summary>
         /// <param name="dataset">DICOM dataset from which render options should be obtained.</param>
-        /// <param name="frame">0-based Frame number</param>
+        /// <param name="frame">Zero-based frame index. Use 0 in case of a single-framed image.</param>
         /// <returns>Grayscale render options based on window level data.</returns>
         public static GrayscaleRenderOptions FromFunctionalWindowLevel(DicomDataset dataset, int frame)
         {
@@ -244,41 +255,51 @@ namespace FellowOakDicom.Imaging
             {
                 return null;
             }
-            
+
             if (!functional.TryGetValue(DicomTag.WindowWidth, 0, out double windowWidth) ||
                 !functional.TryGetValue(DicomTag.WindowCenter, 0, out double windowCenter))
             {
                 return null;
             }
 
+            // #1891 VOI LUT Function with empty value causes a crash
+            if (!functional.TryGetValue(DicomTag.VOILUTFunction, 0, out string voiLutFunction)
+            && !dataset.TryGetValue(DicomTag.VOILUTFunction, 0, out voiLutFunction))
+            {
+                voiLutFunction = "LINEAR";
+            }
+
+            // #1905 LINEAR function requires a windowWidth of >= 1. So if windowWidth is lower, then LINEAR_EXACT has to be applied
+            if (windowWidth < 1.0 && voiLutFunction == "LINEAR")
+            {
+                voiLutFunction = "LINEAR_EXACT";
+            }
+
             var bits = BitDepth.FromDataset(dataset);
             var options = new GrayscaleRenderOptions(bits)
             {
-                RescaleSlope = dataset.Contains(DicomTag.RescaleSlope)
-                    ? dataset.GetSingleValue<double>(DicomTag.RescaleSlope)
-                    : functional.Contains(DicomTag.RescaleSlope)
-                    ? functional.GetSingleValue<double>(DicomTag.RescaleSlope)
-                    : 1.0,
-                RescaleIntercept = dataset.Contains(DicomTag.RescaleIntercept)
-                    ? dataset.GetSingleValue<double>(DicomTag.RescaleIntercept)
-                    : functional.Contains(DicomTag.RescaleIntercept)
-                    ? functional.GetSingleValue<double>(DicomTag.RescaleIntercept)
-                    : 0.0,
-
                 WindowWidth = windowWidth,
                 WindowCenter = windowCenter,
-
-                VOILUTFunction = dataset.Contains(DicomTag.VOILUTFunction)
-                    ? dataset.GetSingleValue<string>(DicomTag.VOILUTFunction)
-                    : functional.Contains(DicomTag.VOILUTFunction)
-                    ? functional.GetSingleValue<string>(DicomTag.VOILUTFunction)
-                    : "LINEAR",
+                VOILUTFunction = voiLutFunction,
                 ColorMap = GetColorMap(dataset)
             };
 
             if (dataset.TryGetNonEmptySequence(DicomTag.ModalityLUTSequence, out DicomSequence modalityLutSequence))
             {
                 options.ModalityLUT = new ModalitySequenceLUT(modalityLutSequence.First(), bits.IsSigned);
+                options.RescaleSlope = 1.0;
+                options.RescaleIntercept = 0.0;
+            }
+            else
+            {
+                options.RescaleSlope = dataset.TryGetSingleValue<double>(DicomTag.RescaleSlope, out var slope)
+                               || functional.TryGetSingleValue<double>(DicomTag.RescaleSlope, out slope)
+                    ? slope
+                    : 1.0;
+                options.RescaleIntercept = dataset.TryGetSingleValue<double>(DicomTag.RescaleIntercept, out var intercept)
+                                   || functional.TryGetSingleValue(DicomTag.RescaleIntercept, out intercept)
+                    ? intercept
+                    : 0.0;
             }
 
             if (dataset.TryGetNonEmptySequence(DicomTag.VOILUTSequence, out DicomSequence voiLutSequence))
@@ -304,11 +325,7 @@ namespace FellowOakDicom.Imaging
             }
 
             var bits = BitDepth.FromDataset(dataset);
-            var options = new GrayscaleRenderOptions(bits)
-            {
-                RescaleSlope = dataset.GetSingleValueOrDefault(DicomTag.RescaleSlope, 1.0),
-                RescaleIntercept = dataset.GetSingleValueOrDefault(DicomTag.RescaleIntercept, 0.0)
-            };
+            var options = new GrayscaleRenderOptions(bits);
 
             int smallValue = dataset.GetSingleValue<int>(DicomTag.SmallestImagePixelValue);
             int largeValue = dataset.GetSingleValue<int>(DicomTag.LargestImagePixelValue);
@@ -328,6 +345,13 @@ namespace FellowOakDicom.Imaging
             if (dataset.TryGetNonEmptySequence(DicomTag.ModalityLUTSequence, out DicomSequence modalityLutSequence))
             {
                 options.ModalityLUT = new ModalitySequenceLUT(modalityLutSequence.First(), bits.IsSigned);
+                options.RescaleSlope = 1.0;
+                options.RescaleIntercept = 0.0;
+            }
+            else
+            {
+                options.RescaleSlope = dataset.GetSingleValueOrDefault(DicomTag.RescaleSlope, 1.0);
+                options.RescaleIntercept = dataset.GetSingleValueOrDefault(DicomTag.RescaleIntercept, 0.0);
             }
 
             if (dataset.TryGetNonEmptySequence(DicomTag.VOILUTSequence, out DicomSequence voiLutSequence))
@@ -347,11 +371,7 @@ namespace FellowOakDicom.Imaging
         public static GrayscaleRenderOptions FromMinMax(DicomDataset dataset)
         {
             var bits = BitDepth.FromDataset(dataset);
-            var options = new GrayscaleRenderOptions(bits)
-            {
-                RescaleSlope = dataset.GetSingleValueOrDefault(DicomTag.RescaleSlope, 1.0),
-                RescaleIntercept = dataset.GetSingleValueOrDefault(DicomTag.RescaleIntercept, 0.0)
-            };
+            var options = new GrayscaleRenderOptions(bits);
 
             int padding = dataset.GetValueOrDefault(DicomTag.PixelPaddingValue, 0, int.MinValue);
 
@@ -360,6 +380,8 @@ namespace FellowOakDicom.Imaging
                 options.WindowWidth = 1;
                 options.WindowCenter = 1;
                 options.VOILUTFunction = "LINEAR";
+                options.RescaleSlope = 1.0;
+                options.RescaleIntercept = 0.0;
             }
             else
             {
@@ -379,15 +401,24 @@ namespace FellowOakDicom.Imaging
                     range.Maximum = bits.MaximumValue;
                 }
 
-                var min = range.Minimum * options.RescaleSlope + options.RescaleIntercept;
-                var max = range.Maximum * options.RescaleSlope + options.RescaleIntercept;
-
+                var min = range.Minimum;
+                var max = range.Maximum;
                 if (dataset.TryGetNonEmptySequence(DicomTag.ModalityLUTSequence, out DicomSequence modalityLutSequence))
                 {
-                    options.ModalityLUT = new ModalitySequenceLUT(modalityLutSequence.First(), bits.IsSigned);
+                    options.ModalityLUT = new ModalitySequenceLUT(modalityLutSequence.Items[0], bits.IsSigned);
+                    options.RescaleSlope = 1.0;
+                    options.RescaleIntercept = 0.0;
                     // if there is a modalityLUT sequence, then the values have to be mapped
                     min = options.ModalityLUT[min];
                     max = options.ModalityLUT[max];
+                }
+                else
+                {
+                    // no modalityLUT sequence, so apply rescale slope and intercept
+                    options.RescaleSlope = dataset.GetSingleValueOrDefault(DicomTag.RescaleSlope, 1.0);
+                    options.RescaleIntercept = dataset.GetSingleValueOrDefault(DicomTag.RescaleIntercept, 0.0);
+                    min = min * options.RescaleSlope + options.RescaleIntercept;
+                    max = max * options.RescaleSlope + options.RescaleIntercept;
                 }
 
                 options.WindowWidth = Math.Max(1, Math.Abs(max - min));
@@ -415,25 +446,33 @@ namespace FellowOakDicom.Imaging
         public static GrayscaleRenderOptions FromBitRange(DicomDataset dataset)
         {
             var bits = BitDepth.FromDataset(dataset);
-            var options = new GrayscaleRenderOptions(bits)
-            {
-                RescaleSlope = dataset.GetSingleValueOrDefault(DicomTag.RescaleSlope, 1.0),
-                RescaleIntercept = dataset.GetSingleValueOrDefault(DicomTag.RescaleIntercept, 0.0)
-            };
+            var options = new GrayscaleRenderOptions(bits);
 
-            var min = bits.MinimumValue * options.RescaleSlope + options.RescaleIntercept;
-            var max = bits.MaximumValue * options.RescaleSlope + options.RescaleIntercept;
+            double min;
+            double max;
+            if (dataset.TryGetNonEmptySequence(DicomTag.ModalityLUTSequence, out DicomSequence modalityLutSequence))
+            {
+                options.ModalityLUT = new ModalitySequenceLUT(modalityLutSequence.Items[0], bits.IsSigned);
+                options.RescaleSlope = 1.0;
+                options.RescaleIntercept = 0.0;
+                // if there is a modalityLUT sequence, then we can get the values from the LUT itself
+                min = options.ModalityLUT.MinimumOutputValue;
+                max = options.ModalityLUT.MaximumOutputValue;
+            }
+            else
+            {
+                // no modalityLUT sequence, so apply rescale slope and intercept
+                options.RescaleSlope = dataset.GetSingleValueOrDefault(DicomTag.RescaleSlope, 1.0);
+                options.RescaleIntercept = dataset.GetSingleValueOrDefault(DicomTag.RescaleIntercept, 0.0);
+                min = bits.MinimumValue * options.RescaleSlope + options.RescaleIntercept;
+                max = bits.MaximumValue * options.RescaleSlope + options.RescaleIntercept;
+            }
 
             options.WindowWidth = Math.Abs(max - min);
             options.WindowCenter = (max + min) / 2.0;
 
             options.VOILUTFunction = dataset.GetSingleValueOrDefault(DicomTag.VOILUTFunction, "LINEAR");
             options.ColorMap = GetColorMap(dataset);
-
-            if (dataset.TryGetNonEmptySequence(DicomTag.ModalityLUTSequence, out DicomSequence modalityLutSequence))
-            {
-                options.ModalityLUT = new ModalitySequenceLUT(modalityLutSequence.First(), bits.IsSigned);
-            }
 
             if (dataset.TryGetNonEmptySequence(DicomTag.VOILUTSequence, out DicomSequence voiLutSequence))
             {
@@ -452,11 +491,7 @@ namespace FellowOakDicom.Imaging
         public static GrayscaleRenderOptions FromHistogram(DicomDataset dataset, int percent = 90)
         {
             var bits = BitDepth.FromDataset(dataset);
-            var options = new GrayscaleRenderOptions(bits)
-            {
-                RescaleSlope = dataset.GetSingleValueOrDefault(DicomTag.RescaleSlope, 1.0),
-                RescaleIntercept = dataset.GetSingleValueOrDefault(DicomTag.RescaleIntercept, 0.0)
-            };
+            var options = new GrayscaleRenderOptions(bits);
 
             var transcoder = new DicomTranscoder(
                 dataset.InternalTransferSyntax,
@@ -472,19 +507,31 @@ namespace FellowOakDicom.Imaging
 
             histogram.ApplyWindow(percent);
 
-            var min = histogram.WindowStart * options.RescaleSlope + options.RescaleIntercept;
-            var max = histogram.WindowEnd * options.RescaleSlope + options.RescaleIntercept;
+            double min = histogram.WindowStart;
+            double max = histogram.WindowEnd;
+            
+            if (dataset.TryGetNonEmptySequence(DicomTag.ModalityLUTSequence, out DicomSequence modalityLutSequence))
+            {
+                options.ModalityLUT = new ModalitySequenceLUT(modalityLutSequence.First(), bits.IsSigned);
+                options.RescaleSlope = 1.0;
+                options.RescaleIntercept = 0.0;
+                // if there is a modalityLUT sequence, then the values have to be mapped
+                min = options.ModalityLUT[histogram.WindowStart];
+                max = options.ModalityLUT[histogram.WindowEnd];
+            }
+            else
+            {
+                options.RescaleSlope = dataset.GetSingleValueOrDefault(DicomTag.RescaleSlope, 1.0);
+                options.RescaleIntercept = dataset.GetSingleValueOrDefault(DicomTag.RescaleIntercept, 0.0);
+                min = min * options.RescaleSlope + options.RescaleIntercept;
+                max = max * options.RescaleSlope + options.RescaleIntercept;
+            }
 
             options.WindowWidth = Math.Abs(max - min);
             options.WindowCenter = (max + min) / 2.0;
 
             options.VOILUTFunction = dataset.GetSingleValueOrDefault(DicomTag.VOILUTFunction, "LINEAR");
             options.ColorMap = GetColorMap(dataset);
-
-            if (dataset.TryGetNonEmptySequence(DicomTag.ModalityLUTSequence, out DicomSequence modalityLutSequence))
-            {
-                options.ModalityLUT = new ModalitySequenceLUT(modalityLutSequence.First(), bits.IsSigned);
-            }
 
             if (dataset.TryGetNonEmptySequence(DicomTag.VOILUTSequence, out DicomSequence voiLutSequence))
             {

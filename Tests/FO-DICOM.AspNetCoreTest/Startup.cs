@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 fo-dicom contributors.
+// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -30,13 +30,13 @@ namespace FO_DICOM.AspNetCoreTest
             services.AddControllers();
             services.AddLogging(c => c.AddConsole());
 
-            services.AddDicomServer<MyDicomService>(o => {
+            services.AddDicomServer<MyDicomService>(Configuration, o => {
                 o.Port = 104;
             });
 
             services.AddDicomServer(
-                o => o.Port = 105,
                 builder => builder
+                    .Configure(o => o.Port = 105)
                     .AnswerDicomEcho()
                     .CheckAssociationForCalledAET("SERVER")
                     .OnInstanceReceived(e => HandleInstanceReceivedAsync(e))

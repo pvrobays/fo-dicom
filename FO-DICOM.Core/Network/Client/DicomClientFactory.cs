@@ -1,8 +1,7 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
-using FellowOakDicom.Log;
 using FellowOakDicom.Network.Client.Advanced.Connection;
 using FellowOakDicom.Network.Tls;
 using Microsoft.Extensions.DependencyInjection;
@@ -66,21 +65,15 @@ namespace FellowOakDicom.Network.Client
 
     public class DefaultDicomClientFactory : IDicomClientFactory
     {
-        private readonly IOptions<DicomClientOptions> _defaultClientOptions;
-        private readonly IOptions<DicomServiceOptions> _defaultServiceOptions;
         private readonly ILoggerFactory _loggerFactory;
         private readonly IAdvancedDicomClientConnectionFactory _advancedDicomClientConnectionFactory;
         private readonly IServiceProvider _serviceProvider;
 
         public DefaultDicomClientFactory(
-            IOptions<DicomClientOptions> defaultClientOptions,
-            IOptions<DicomServiceOptions> defaultServiceOptions,
             ILoggerFactory loggerFactory,
             IAdvancedDicomClientConnectionFactory advancedDicomClientConnectionFactory,
             IServiceProvider serviceProvider)
         {
-            _defaultClientOptions = defaultClientOptions ?? throw new ArgumentNullException(nameof(defaultClientOptions));
-            _defaultServiceOptions = defaultServiceOptions ?? throw new ArgumentNullException(nameof(defaultServiceOptions));
             _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
             _advancedDicomClientConnectionFactory = advancedDicomClientConnectionFactory ?? throw new ArgumentNullException(nameof(advancedDicomClientConnectionFactory));
             _serviceProvider = serviceProvider;
@@ -116,8 +109,8 @@ namespace FellowOakDicom.Network.Client
                                             $"which is longer than the maximum allowed length ({DicomVR.AE.MaximumLength} characters)");
             }
 
-            var clientOptions = _defaultClientOptions.Value.Clone();
-            var serviceOptions = _defaultServiceOptions.Value.Clone();
+            var clientOptions = _serviceProvider.GetRequiredService<IOptions<DicomClientOptions>>().Value.Clone();
+            var serviceOptions = _serviceProvider.GetRequiredService<IOptions<DicomServiceOptions>>().Value.Clone();
 
             return new DicomClient(host, port, tlsInitiator, callingAe, calledAe, clientOptions, serviceOptions, _loggerFactory, _advancedDicomClientConnectionFactory);
         }

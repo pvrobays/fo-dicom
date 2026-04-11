@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -8,7 +8,6 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
@@ -1448,6 +1447,24 @@ namespace FellowOakDicom.Tests.Serialization
 
             string expected = "{\"00080050\":{\"vr\":\"SH\",\"Value\":[\"123456\"],\"keyword\":\"AccessionNumber\",\"name\":\"Accession Number\"}}";
             Assert.Equal(expected, json);
+        }
+
+        [Fact]
+        public void Serializing_FragmentedData_Should_Fail()
+        {
+            var ds = new DicomDataset(new DicomOtherByteFragment(DicomTag.PixelData));
+            var jsonOptions = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Converters = { new DicomJsonConverter() }
+            };
+            var exception = Record.Exception(() =>
+                JsonSerializer.Serialize(ds, jsonOptions)
+            );
+            Assert.NotNull(exception);
+            Assert.IsType<JsonException>(exception);
+            Assert.Contains("fragmented data is not supported", exception.Message);
+
         }
 
         [Fact]

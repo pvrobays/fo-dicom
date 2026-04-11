@@ -1,9 +1,12 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
 namespace FellowOakDicom.StructuredReport
 {
+    /// <summary>
+    /// Class that represents a measured value in DICOM Structured Reports 
+    /// </summary>
     public class DicomMeasuredValue : DicomDataset
     {
         public DicomMeasuredValue(DicomDataset dataset)
@@ -13,7 +16,11 @@ namespace FellowOakDicom.StructuredReport
 
         public DicomMeasuredValue(DicomSequence sequence)
         {
-            if (sequence.Items.Count == 0) throw new DicomDataException("No measurement item found in sequence.");
+            if (sequence.Items.Count == 0)
+            {
+                throw new DicomDataException("No measurement item found in sequence.");
+            }
+
             Add(sequence.Items[0]);
         }
 

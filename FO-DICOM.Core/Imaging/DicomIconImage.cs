@@ -1,15 +1,9 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
-using FellowOakDicom.Imaging.Codec;
 using FellowOakDicom.Imaging.Render;
-using FellowOakDicom.IO.Buffer;
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Data;
-using System.Linq;
 
 namespace FellowOakDicom.Imaging
 {

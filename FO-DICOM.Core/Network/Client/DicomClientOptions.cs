@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 fo-dicom contributors.
+// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -6,6 +6,11 @@ namespace FellowOakDicom.Network.Client
 {
     public class DicomClientOptions
     {
+        /// <summary>
+        /// Gets or sets the timeout (in ms) to wait for the TCP connection to establish
+        /// </summary>
+        public int ConnectionTimeoutInMs { get; set; } = 0;
+
         /// <summary>
         /// Gets or sets the timeout (in ms) to wait for an association response after sending an association request
         /// </summary>
@@ -41,6 +46,7 @@ namespace FellowOakDicom.Network.Client
                 AssociationRequestTimeoutInMs = AssociationRequestTimeoutInMs,
                 AssociationReleaseTimeoutInMs = AssociationReleaseTimeoutInMs,
                 AssociationLingerTimeoutInMs = AssociationLingerTimeoutInMs,
+                ConnectionTimeoutInMs = ConnectionTimeoutInMs,
                 MaximumNumberOfRequestsPerAssociation = MaximumNumberOfRequestsPerAssociation,
                 MaximumNumberOfConsecutiveTimedOutAssociationRequests = MaximumNumberOfConsecutiveTimedOutAssociationRequests
             };

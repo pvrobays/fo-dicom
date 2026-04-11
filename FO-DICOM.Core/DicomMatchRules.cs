@@ -1,12 +1,11 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
-using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Linq;
 
 namespace FellowOakDicom
 {
@@ -236,7 +235,7 @@ namespace FellowOakDicom
 
         public bool Match(DicomDataset dataset)
         {
-            var value = dataset.GetValueOrDefault(_tag, -1, string.Empty);
+            var value = dataset.TryGetString(_tag, out string tagValue) ? tagValue : string.Empty;
             return _value == value;
         }
 
@@ -272,7 +271,7 @@ namespace FellowOakDicom
 
         public bool Match(DicomDataset dataset)
         {
-            var value = dataset.GetValueOrDefault(_tag, -1, string.Empty);
+            var value = dataset.TryGetString(_tag, out string tagValue) ? tagValue : string.Empty;
             return value.StartsWith(_value);
         }
 
@@ -308,7 +307,7 @@ namespace FellowOakDicom
 
         public bool Match(DicomDataset dataset)
         {
-            var value = dataset.GetValueOrDefault(_tag, -1, string.Empty);
+            var value = dataset.TryGetString(_tag, out string tagValue) ? tagValue : string.Empty;
             return value.EndsWith(_value);
         }
 
@@ -344,7 +343,7 @@ namespace FellowOakDicom
 
         public bool Match(DicomDataset dataset)
         {
-            var value = dataset.GetValueOrDefault(_tag, -1, string.Empty);
+            var value = dataset.TryGetString(_tag, out string tagValue) ? tagValue : string.Empty;
             return value.Contains(_value);
         }
 
@@ -380,7 +379,7 @@ namespace FellowOakDicom
 
         public bool Match(DicomDataset dataset)
         {
-            var value = dataset.GetValueOrDefault(_tag, -1, string.Empty);
+            var value = dataset.TryGetString(_tag, out string tagValue) ? tagValue : string.Empty;
             return value.Wildcard(_pattern);
         }
 
@@ -419,7 +418,7 @@ namespace FellowOakDicom
 
         public bool Match(DicomDataset dataset)
         {
-            var value = dataset.GetValueOrDefault(_tag, -1, string.Empty);
+            var value = dataset.TryGetString(_tag, out string tagValue) ? tagValue : string.Empty;
             return _regex.IsMatch(value);
         }
 
@@ -455,7 +454,7 @@ namespace FellowOakDicom
 
         public bool Match(DicomDataset dataset)
         {
-            var value = dataset.GetValueOrDefault(_tag, -1, string.Empty);
+            var value = dataset.TryGetString(_tag, out string tagValue) ? tagValue : string.Empty;
             return _values.Any(v => v == value);
         }
 

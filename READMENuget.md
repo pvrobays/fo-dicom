@@ -10,7 +10,7 @@ This library is licensed under the [Microsoft Public License (MS-PL)](http://ope
 
 ### Features
 * Targets .NET Standard 2.0
-* DICOM dictionary version 2024c
+* DICOM dictionary version 2025d
 * High-performance, fully asynchronous `async`/`await` API
 * JPEG (including lossless), JPEG-LS, JPEG2000, HTJPEG2000, and RLE image compression (via additional package)
 * Supports very large datasets with content loading on demand
@@ -25,7 +25,7 @@ This library is licensed under the [Microsoft Public License (MS-PL)](http://ope
 Fellow Oak DICOM officially supports the following runtimes:
 
 * .NET Core 8.0
-* .NET Core 6.0
+* .NET Core 9.0
 * .NET Framework 4.6.2
 
 Other runtimes that implement .NET Standard 2.0 may work, but be aware that our CI pipeline only tests these platforms (and only on Windows)
@@ -48,8 +48,7 @@ Package | Description
 Documentation, including API documentation, is available via GitHub pages:
 - documentation for the latest release for [fo-dicom 4](https://fo-dicom.github.io/stable/v4/index.html) and
   [fo-dicom 5](https://fo-dicom.github.io/stable/v5/index.html)
-- documentation for the development version for [fo-dicom 4](https://fo-dicom.github.io/dev/v4/index.html) and
-  [fo-dicom 5](https://fo-dicom.github.io/dev/v5/index.html)
+- documentation for the development version for [fo-dicom 5](https://fo-dicom.github.io/dev/v5/index.html)
 
 ### Usage Notes
 

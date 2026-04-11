@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -304,6 +304,26 @@ namespace FellowOakDicom.Tests
 
             // 2 component groups, each of them shorter than 64 characters, but together more than 64 characters
             ds.AddOrUpdate(DicomTag.OtherPatientNames, "VeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVery^Long=VeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVeryVery^Long");
+        }
+
+        [Fact]
+        public void DicomVRValidation_HandleNullValue()
+        {
+            // null values are not allowed for a VR value
+            Assert.Throws<DicomValidationException>(() => DicomVR.AE.ValidateString(null));
+            Assert.Throws<DicomValidationException>(() => DicomVR.AS.ValidateString(null));
+            Assert.Throws<DicomValidationException>(() => DicomVR.CS.ValidateString(null));
+            Assert.Throws<DicomValidationException>(() => DicomVR.DA.ValidateString(null));
+            Assert.Throws<DicomValidationException>(() => DicomVR.DS.ValidateString(null));
+            Assert.Throws<DicomValidationException>(() => DicomVR.DT.ValidateString(null));
+            Assert.Throws<DicomValidationException>(() => DicomVR.IS.ValidateString(null));
+            Assert.Throws<DicomValidationException>(() => DicomVR.LO.ValidateString(null));
+            Assert.Throws<DicomValidationException>(() => DicomVR.LT.ValidateString(null));
+            Assert.Throws<DicomValidationException>(() => DicomVR.PN.ValidateString(null));
+            Assert.Throws<DicomValidationException>(() => DicomVR.SH.ValidateString(null));
+            Assert.Throws<DicomValidationException>(() => DicomVR.ST.ValidateString(null));
+            Assert.Throws<DicomValidationException>(() => DicomVR.TM.ValidateString(null));
+            Assert.Throws<DicomValidationException>(() => DicomVR.UI.ValidateString(null));
         }
 
         #endregion

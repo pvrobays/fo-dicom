@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -39,6 +39,11 @@ namespace FellowOakDicom.Network
         /// <seealso cref="System.Net.Security.SslStream.ReadTimeout"/>
         /// <seealso cref="System.Net.Security.SslStream.WriteTimeout"/>
         public TimeSpan Timeout { get; set; }
+
+        /// <summary>
+        /// Geets or sets the timeout when the TCP connection is established
+        /// </summary>
+        public TimeSpan ConnectionTimeout { get; set; } = TimeSpan.FromMilliseconds(-1);
 
         /// <summary>
         /// Gets or sets the size of the receive buffer of the underlying TCP connection

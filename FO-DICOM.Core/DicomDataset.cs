@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -785,16 +785,22 @@ namespace FellowOakDicom
         }
 
 
-
+        /// <summary>
+        /// Returns a DicomDataset, that contains all Tags accumulated from the Shared Functional Group Sequence and the Per-Frame Functional Group Sequence.
+        /// </summary>
+        /// <param name="frame">Zero-based frame index.</param>
+        /// <returns></returns>
+        /// <exception cref="DicomDataException"></exception>
         public DicomDataset FunctionalGroupValues(int frame)
         {
-            // If validation is disabled on the current data set
-            // it should also be disabled on the new dataset we create here
-            // because we will be copying data over from one to the other
-            var functionalDs = new DicomDataset { ValidateItems = ValidateItems };
+            // Validation should be disabled, because we will be copying data over from another dataset.
+            // that means, these values are either loaded from a source, or they have already been
+            // validated.
+            var functionalDs = new DicomDataset { ValidateItems = false };
 
             // gets all items from SharedFunctionalGroups
-            if (TryGetSequence(DicomTag.SharedFunctionalGroupsSequence, out var sharedFunctionalGroupsSequence))
+            if (TryGetSequence(DicomTag.SharedFunctionalGroupsSequence, out var sharedFunctionalGroupsSequence)
+                && sharedFunctionalGroupsSequence.Items.Count > 0)
             {
                 var sharedFunctionGroupItem = sharedFunctionalGroupsSequence.Items[0] ?? throw new DicomDataException("unexpected empty SharedFunctionalGroupsSequence");
                 foreach (var sequence in sharedFunctionGroupItem.OfType<DicomSequence>())
@@ -806,16 +812,20 @@ namespace FellowOakDicom
                     else
                     {
                         // skip empty sequences
-                        if (sequence.Items.Count > 0)
+                        if (sequence.Items.Count <= 0)
                         {
-                            foreach (var item in sequence.Items[0])
-                            {
-                                functionalDs.AddOrUpdate(item);
-                            }
+                            continue;
+                        }
+
+                        foreach (var item in sequence.Items[0])
+                        {
+                            functionalDs.AddOrUpdate(item);
                         }
                     }
                 }
             }
+            
+            // gets the specific items from PerFrameFunctionalGroups for this frame
             if (TryGetSequence(DicomTag.PerFrameFunctionalGroupsSequence, out var perFrameFunctionalGroupsSequence)
                 && perFrameFunctionalGroupsSequence.Items.Count > frame)
             {
@@ -829,17 +839,20 @@ namespace FellowOakDicom
                     else
                     {
                         // skip empty sequences
-                        if (sequence.Items.Count > 0)
+                        if (sequence.Items.Count <= 0)
                         {
-                            foreach (var item in sequence.Items[0])
-                            {
-                                functionalDs.AddOrUpdate(item);
-                            }
+                            continue;
+                        }
+
+                        foreach (var item in sequence.Items[0])
+                        {
+                            functionalDs.AddOrUpdate(item);
                         }
                     }
                 }
 
             }
+            
             return functionalDs;
         }
 
@@ -1430,6 +1443,7 @@ namespace FellowOakDicom
             if (vr == DicomVR.SQ)
             {
                 if (values == null) return DoAdd(new DicomSequence(tag), allowUpdate);
+                if (typeof(T) == typeof(DicomSequence) && values.Count == 1) return DoAdd(new DicomSequence(tag, (values[0] as DicomSequence).Items.ToArray()), allowUpdate);
                 if (typeof(T) == typeof(DicomContentItem)) return DoAdd(new DicomSequence(tag, values.Cast<DicomContentItem>().Select(x => x.Dataset).ToArray()), allowUpdate);
                 if (typeof(T) == typeof(DicomDataset) || typeof(T) == typeof(DicomCodeItem)
                     || typeof(T) == typeof(DicomMeasuredValue) || typeof(T) == typeof(DicomReferencedSOP)) return DoAdd(new DicomSequence(tag, values.Cast<DicomDataset>().ToArray()), allowUpdate);

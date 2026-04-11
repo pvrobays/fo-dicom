@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -72,6 +72,10 @@ namespace FellowOakDicom
 
         #region CONSTRUCTORS
 
+        /// <summary>
+        /// Constructs an empty DicomFile instance with empty <see cref="Dataset"> and empty <see cref="FileMetaInfo"/>.
+        /// <see cref="Dataset"/> and <see cref="FileMetaInfo"/> have to be filled manually.
+        /// </summary>
         public DicomFile()
         {
             FileMetaInfo = new DicomFileMetaInformation();
@@ -80,6 +84,10 @@ namespace FellowOakDicom
             IsPartial = false;
         }
 
+        /// <summary>
+        /// Constructs a DicomFile instance. <see cref="Dataset"/> and <see cref="FileMetaInfo"/> are initialized from values contained in parameter <paramref name="dataset"/>
+        /// </summary>
+        /// <param name="dataset">Values with that the DicomFile is initialized</param>
         public DicomFile(DicomDataset dataset)
         {
             Dataset = dataset;
@@ -110,7 +118,7 @@ namespace FellowOakDicom
         /// <summary>
         /// Gets the DICOM dataset of the file.
         /// </summary>
-        public DicomDataset Dataset { get; protected set; }
+        public DicomDataset Dataset { get; internal set; }
 
         /// <summary>
         /// Gets whether the parsing of the file ended prematurely.

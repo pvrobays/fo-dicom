@@ -1,10 +1,71 @@
-### 5.1.4 (TBD)
+### 5.2.5 (TBD)
 
+
+### 5.2.4 (2025-10-03)
+- Fix issue where DicomFile.Clone did not do a deep-clone as expected (#2025)
+- Fix referencing the wrong System.Text.Encoding.CodePages package (#2021)
+- update to DICOM standard 2025d
+
+### 5.2.3 (2025-09-18)
+- Add Milliseconds to result in DicomDataset.GetDateTime (#1967)
+- Add convenience function to open and save in DicomStructuredReport (#1968)
+- FO-DICOM.Tests target net9.0 instead of net6.0
+- Apply the sign to the minutes part of DatetimeOffsetFromUTC correctly (#1988)
+- Add new functions TryGetDateTime and TryGetDateTimeOffset in DicomDataset (#1988)
+- Fix issue where rescale slope/intercept were used from dataset in case a Modality LUT Sequence is present (#1986)
+- allow rendering of images with empty rescale information (#1975)
+- Prevent stack overflow in DicomDirectory by changing recursive to iterative method (#1977)
+- Only accept even groups as Overlay Plane Module (#1994)
+- Connect Options pattern with IConfiguration in setup (#1940)
+- **Breaking change**: IDicomClientFactory does not have the parameters IOptions<DicomClientOption> and IOptions<DicomServiceOption> any more. (#1977)
+- Fix issue where all DicomMatchRules would not match any value (#2010)
+- Fix memory leak in DicomServer (#2009)
+- You can now specify port number 0 when creating a DicomServer to let the OS assign an available port, following standard socket API behavior. (#1990)
+- update to DICOM standard 2025c
+
+### 5.2.2 (2025-04-22)
+- render images with window width < 1, but apply LINEAR_EXACT on rendering (#1905)
+- use current version of fo-dicom.Codecs in tests and DicomDump supporting Windows arm64 builds
+- new package Fo-Dicom.Imaging.SkiaSharp (#1956)
+- Send Command and Data in separate PDUs (#1960)
+- Fix opening an invalid file that contains some delimiter items at the end of the file (#1958)
+- update to DICOM Standard 2025b
+
+### 5.2.1 (2025-03-13)
+- Fixed regression in parser where group length of VR UN was parsed wrong (#1941)
+- UseFellowOakDicom registers the default services only if there are not yet some services registered (#1929)
+- update to DICOM Standard 2025a
+
+### 5.2.0 (2025-02-03)
+- refactor the parser to make it better maintainable
+- **Breaking change**: IByteSource interface has changed
+- VOI LUT Function with empty value causes a crash (#1891)
+- Add ConnectionTimeout to ClientConnectionOptions (#1784)
+- Fixed bug, where milliseconds have been cut away when adding a Datetime to a DicomDataset (#1719)
+- DicomElement.ValueRepresentation.ValidateString() now throws a DicomValidationException if a null value is passed (#1590)
+- The optional AffectedSopInstanceUID is added to the CStoreResponse by default. (#1390)
+- Handle invalid DICOM files, that contain "," as decimal separator in DS values (#1296)
+- DicomDataset.AddOrUpdate also allows passing DicomSequence as argument type (#1664)
+- Enable reading DICOMDIR files where the offsets are not correctly but at cleast close (#1927)
+- Fix parsing files from stream created by HttpClient (#1698)
+- update to DICOM Standard 2024e
+
+### 5.1.5 (2024-11-25)
+
+- Fix regression which caused an exception if writing with an empty SpecificCharacterSet tag (#1879)
+- Fix issue where DicomDataset.FunctionalGroupValues throws IndexOutOfBounds in case of an empty SharedFunctionalGroupSequence (#1884)
+
+### 5.1.4 (2024-10-27)
+
+- Update to DICOM Standard 2024d
 - Fix issue where the main TCP listener loop could be blocked by frozen TLS handshakes (#1766)
 - Add support for saving new strings with multi-valued Specific Character Set (#1789)
+- Throw a meaningful and explaining JsonException when trying to serialize not supported fragmented data (#1792)
+- Fix issue with retrieving correct VR when the DICOM element's length is a blank character (e.g., 0x200A) by modifying the empty string check to specifically handle 0x2020 (#1847)
 - Fix bug where under some circumstances (transcode a 8 bit image with odd row or column length from explicit to implicit TS) a odd length pixeldata is written (#1403)
 - Fix bug where DicomDataset.GetDicomTag thew an exception if the private tag does not exist in dataset (#1840)
 - FO-DICOM.Tests target net8.0-windows instead of net7.0-windows
+- Fix rendering of EnhancedMR or EnhancedCT images, that contain any invalid value in any item within the Functional Groups (#1862)
 
 ### 5.1.3 (2024-06-27)
 

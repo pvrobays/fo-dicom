@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -41,7 +41,6 @@ namespace FellowOakDicom.Network
 
         /// <summary>
         /// Gets the options to control behavior of <see cref="DicomService"/> base class.
-        /// Gets the port to which the server is listening.
         /// </summary>
         DicomServiceOptions Options { get; }
 

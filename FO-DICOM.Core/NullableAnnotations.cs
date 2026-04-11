@@ -1,3 +1,6 @@
+// Copyright (c) 2012-2025 fo-dicom contributors.
+// Licensed under the Microsoft Public License (MS-PL).
+
 // ReSharper disable CheckNamespace
 
 // Note: these attributes exist in .NET Standard 2.1 or .NET Core 3.1 and up

@@ -1,13 +1,13 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
+using FellowOakDicom.IO;
+using FellowOakDicom.IO.Buffer;
+using FellowOakDicom.IO.Reader;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using FellowOakDicom.IO;
-using FellowOakDicom.IO.Reader;
-using FellowOakDicom.IO.Buffer;
-using System;
 
 namespace FellowOakDicom.Media
 {
@@ -34,10 +34,10 @@ namespace FellowOakDicom.Media
             var offset = _dataset.GetSingleValue<uint>(DicomTag.OffsetOfTheFirstDirectoryRecordOfTheRootDirectoryEntity);
             var root = ParseDirectoryRecord(offset, notFoundOffsets);
 
-            if (_lookup.Count > 0)
+            if (_lookup.Count > 0 && notFoundOffsets.Count > 0)
             {
                 // There are unresolved sequences. Try to resolve them with non exact offset match
-                root = ParseDirectoryRecordNotExact(root, offset, notFoundOffsets);
+                root = ParseDirectoryRecordNotExact(root, offset);
             }
 
             return root;
@@ -73,60 +73,25 @@ namespace FellowOakDicom.Media
             return record;
         }
 
-
-        private DicomDirectoryRecord ParseDirectoryRecordNotExact(DicomDirectoryRecord root, uint rootOffset, List<uint> offsets)
-        {
-            // Collect all used offsets, and sort them (they can contain duplicates)
-            foreach (var dataset in _lookup.Values)
-            {
-                var offset = dataset.GetSingleValue<uint>(DicomTag.OffsetOfTheNextDirectoryRecord);
-                if (offset > 0)
-                {
-                    offsets.Add(offset);
-                }
-
-                offset = dataset.GetSingleValue<uint>(DicomTag.OffsetOfReferencedLowerLevelDirectoryEntity);
-                if (offset > 0)
-                {
-                    offsets.Add(offset);
-                }
-            }
-            var offsetArray = offsets.ToArray();
-            Array.Sort(offsetArray);
-
-            return ParseDirectoryRecord(root, rootOffset, offsetArray);
-        }
-
-        private DicomDirectoryRecord ParseDirectoryRecord(DicomDirectoryRecord record, uint offset, uint[] offsets)
+        private DicomDirectoryRecord ParseDirectoryRecordNotExact(DicomDirectoryRecord record, uint offset)
         {
             if (record == null)
             {
-                // Find the best matching existing offset for the given offset
-                // The given offset should be in offsets and the following entry in that sorted array gives
-                // us the next used offset. That's the upper bound for the search
+                // Find the closest existing offset to the given wrong offset
+                uint? bestOffset = null;
+                uint bestDistance = uint.MaxValue;
+                foreach (var key in _lookup.Keys)
+                {
+                    var currentDistance = key > offset ? key - offset : offset - key; Math.Abs((int)key - (int)offset);
+                    if (bestOffset == null || currentDistance < bestDistance)
+                    {
+                        bestOffset = key;
+                        bestDistance = currentDistance;
+                    }
+                }
 
-                var index = Array.BinarySearch(offsets, offset);
-                if (index < 0)
-                {
-                    return null;
-                }
-                uint maxOffset;
-                int maxIndex = offsets.Length - 1;
-                // Deal with the rare possibility that offsets can contain duplicates
-                while (true)
-                {
-                    if (index >= maxIndex)
-                    {
-                        maxOffset = uint.MaxValue;
-                        break;
-                    }
-                    maxOffset = offsets[++index];
-                    if (maxOffset != offset)
-                    {
-                        break;
-                    }
-                }
-                offset = _lookup.Keys.FirstOrDefault(key => key >= offset && key < maxOffset);
+                offset = bestOffset ?? _lookup.Keys.FirstOrDefault();
+
                 if (!_lookup.TryGetValue(offset, out var dataset))
                 {
                     return null;
@@ -143,13 +108,13 @@ namespace FellowOakDicom.Media
             var nextOffset = record.GetSingleValue<uint>(DicomTag.OffsetOfTheNextDirectoryRecord);
             if (nextOffset > 0)
             {
-                record.NextDirectoryRecord = ParseDirectoryRecord(record.NextDirectoryRecord, nextOffset, offsets);
+                record.NextDirectoryRecord = ParseDirectoryRecordNotExact(record.NextDirectoryRecord, nextOffset);
             }
 
             var lowerLevelOffset = record.GetSingleValue<uint>(DicomTag.OffsetOfReferencedLowerLevelDirectoryEntity);
             if (lowerLevelOffset > 0)
             {
-                record.LowerLevelDirectoryRecord = ParseDirectoryRecord(record.LowerLevelDirectoryRecord, lowerLevelOffset, offsets);
+                record.LowerLevelDirectoryRecord = ParseDirectoryRecordNotExact(record.LowerLevelDirectoryRecord, lowerLevelOffset);
             }
 
             return record;
@@ -159,12 +124,12 @@ namespace FellowOakDicom.Media
         #region IDicomReaderObserver Implementation
 
 
-        public void OnElement(IByteSource source, DicomTag tag, DicomVR vr, IByteBuffer data)
+        public void OnElement(IByteSource source, long position, DicomTag tag, DicomVR vr, IByteBuffer data)
         {
             // do nothing here
         }
 
-        public void OnBeginSequence(IByteSource source, DicomTag tag, uint length)
+        public void OnBeginSequence(IByteSource source, long position, DicomTag tag, uint length)
         {
             _currentSequenceTag.Push(tag);
             if (tag == DicomTag.DirectoryRecordSequence)
@@ -173,7 +138,7 @@ namespace FellowOakDicom.Media
             }
         }
 
-        public void OnBeginSequenceItem(IByteSource source, uint length)
+        public void OnBeginSequenceItem(IByteSource source, long position, uint length)
         {
             if (_currentSequenceTag.Peek() == DicomTag.DirectoryRecordSequence && _directoryRecordSequence != null)
             {
@@ -191,12 +156,12 @@ namespace FellowOakDicom.Media
             _currentSequenceTag.Pop();
         }
 
-        public void OnBeginFragmentSequence(IByteSource source, DicomTag tag, DicomVR vr)
+        public void OnBeginFragmentSequence(IByteSource source, long position, DicomTag tag, DicomVR vr)
         {
             // do nothing here
         }
 
-        public void OnFragmentSequenceItem(IByteSource source, IByteBuffer data)
+        public void OnFragmentSequenceItem(IByteSource source, long position, IByteBuffer data)
         {
             // do nothing here
         }

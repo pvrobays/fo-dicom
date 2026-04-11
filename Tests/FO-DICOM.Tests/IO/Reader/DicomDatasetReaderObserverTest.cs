@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -26,7 +26,7 @@ namespace FellowOakDicom.Tests.IO.Reader
             var observer = new DicomDatasetReaderObserver(dataset);
             var buffer = new MemoryByteBuffer(Encoding.ASCII.GetBytes(data));
 
-            observer.OnElement(null, tag, vr, buffer);
+            observer.OnElement(null, 0, tag, vr, buffer);
             Assert.IsType(expected, dataset.First());
         }
 

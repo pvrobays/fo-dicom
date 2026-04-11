@@ -1,9 +1,8 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
 using FellowOakDicom.Serialization;
-using System;
 using System.Text;
 using System.Xml;
 using Xunit;

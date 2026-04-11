@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -84,7 +84,7 @@ namespace FellowOakDicom.Tests.IO.Buffer
 
             // Assert
             Assert.Equal(expected.Count, actual.Length);
-            Assert.Equal(expected, actual);
+            Assert.Equal(expected.ToArray(), actual);
         }
 
         [Fact]
@@ -124,7 +124,7 @@ namespace FellowOakDicom.Tests.IO.Buffer
             // Assert
             var actual = outputMs.ToArray();
             Assert.Equal(expected.Count, actual.Length);
-            Assert.Equal(expected, actual);
+            Assert.Equal(expected.ToArray(), actual);
         }
 
         [Theory]
@@ -151,7 +151,7 @@ namespace FellowOakDicom.Tests.IO.Buffer
             // Assert
             var actual = outputMs.ToArray();
             Assert.Equal(expected.Count, actual.Length);
-            Assert.Equal(expected, actual);
+            Assert.Equal(expected.ToArray(), actual);
         }
         [Theory]
         [InlineData(0, 255)]
@@ -170,7 +170,7 @@ namespace FellowOakDicom.Tests.IO.Buffer
 
             // Assert
             Assert.Equal(expected.Count, actual.Length);
-            Assert.Equal(expected, actual);
+            Assert.Equal(expected.ToArray(), actual);
         }
 
         [Theory]
@@ -196,7 +196,7 @@ namespace FellowOakDicom.Tests.IO.Buffer
 
             // Assert
             Assert.Equal(expected.Count, actual.Length);
-            Assert.Equal(expected, actual);
+            Assert.Equal(expected.ToArray(), actual);
         }
 
         [Fact]
@@ -236,7 +236,7 @@ namespace FellowOakDicom.Tests.IO.Buffer
             // Assert
             var actual = outputMs.ToArray();
             Assert.Equal(expected.Count, actual.Length);
-            Assert.Equal(expected, actual);
+            Assert.Equal(expected.ToArray(), actual);
         }
 
         [Theory]
@@ -263,7 +263,7 @@ namespace FellowOakDicom.Tests.IO.Buffer
             // Assert
             var actual = outputMs.ToArray();
             Assert.Equal(expected.Count, actual.Length);
-            Assert.Equal(expected, actual);
+            Assert.Equal(expected.ToArray(), actual);
         }
 
         #endregion

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2023 fo-dicom contributors.
+// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Channels;
@@ -284,6 +283,7 @@ namespace FellowOakDicom.Network
             {
                 listener = _networkManager.CreateNetworkListener(IPAddress, Port);
                 await listener.StartAsync().ConfigureAwait(false);
+                _port = listener.Port;
                 IsListening = true;
 
                 var maxClientsAllowed = _serverOptions.MaxClientsAllowed;
@@ -390,8 +390,12 @@ namespace FellowOakDicom.Network
                     // First, we wait until at least one service is running
                     // We don't actually care about the values inside the channel, they just serve as a notification that a service has connected
                     // It is also possible that the DICOM server is stopped while are waiting here
-                    var aServiceHasStarted = _servicesChannel.Reader.ReadAsync(_cancellationToken).AsTask();
-                    await Task.WhenAny(aServiceHasStarted, _stopped.Task).ConfigureAwait(false);
+                    using (var readerCts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken))
+                    {
+                        var aServiceHasStarted = _servicesChannel.Reader.ReadAsync(readerCts.Token).AsTask();
+                        await Task.WhenAny(aServiceHasStarted, _stopped.Task).ConfigureAwait(false);
+                        readerCts.Cancel();
+                    } 
                     _cancellationToken.ThrowIfCancellationRequested();
 
                     // Then, we wait until at least one service completes
@@ -416,35 +420,42 @@ namespace FellowOakDicom.Network
                             break;
                         }
 
-                        var tasks = new List<Task>(numberOfDicomServices + 1);
-                        var anotherServiceHasStarted = _servicesChannel.Reader.ReadAsync(_cancellationToken).AsTask();
-                        tasks.Add(anotherServiceHasStarted);
-                        tasks.AddRange(runningDicomServices.Select(s => s.Task));
-                        var winner = await Task.WhenAny(tasks).ConfigureAwait(false);
-                        if (winner == anotherServiceHasStarted)
+                        using (var readerCts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken))
                         {
-                            try
+                            var anotherServiceHasStarted = _servicesChannel.Reader.ReadAsync(readerCts.Token).AsTask();
+                            
+                            var tasks = new List<Task>(numberOfDicomServices + 1);
+                            tasks.Add(anotherServiceHasStarted);
+                            tasks.AddRange(runningDicomServices.Select(s => s.Task));
+                            var winner = await Task.WhenAny(tasks).ConfigureAwait(false);
+                            
+                            readerCts.Cancel();
+                            
+                            if (winner == anotherServiceHasStarted)
                             {
-                                await anotherServiceHasStarted;
-                            }
-                            catch (OperationCanceledException)
-                            {
-                                // If the server is disposed while we were waiting, deal with that gracefully
-                                break;
-                            }
-                            catch (ChannelClosedException)
-                            {
-                                // If the server is disposed while we were waiting, deal with that gracefully
-                                break;
-                            }
+                                try
+                                {
+                                    await anotherServiceHasStarted;
+                                }
+                                catch (OperationCanceledException)
+                                {
+                                    // If the server is disposed while we were waiting, deal with that gracefully
+                                    break;
+                                }
+                                catch (ChannelClosedException)
+                                {
+                                    // If the server is disposed while we were waiting, deal with that gracefully
+                                    break;
+                                }
 
-                            // If another service started, we must restart the Task.WhenAny with the new set of running service tasks
-                            Logger.LogDebug("Another DICOM service has started while the cleanup was waiting for one or more DICOM services to complete");
-                        }
-                        else
-                        {
-                            Logger.LogDebug("One or more running DICOM services have completed");
-                            break;
+                                // If another service started, we must restart the Task.WhenAny with the new set of running service tasks
+                                Logger.LogDebug("Another DICOM service has started while the cleanup was waiting for one or more DICOM services to complete");
+                            }
+                            else
+                            {
+                                Logger.LogDebug("One or more running DICOM services have completed");
+                                break;
+                            }
                         }
                     }
 

@@ -1,8 +1,7 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
-using FellowOakDicom.Network.Tls;
 using Microsoft.Extensions.Logging;
 using System.Net.Sockets;
 using System.Threading;
@@ -25,6 +24,12 @@ namespace FellowOakDicom.Network
         /// Stop listening.
         /// </summary>
         void Stop();
+
+        /// <summary>
+        /// Port property is valid after StartAsync() has been invoked and a listener
+        /// is bound. Returns -1 otherwise.
+        /// </summary>
+        int Port { get; }
 
         /// <summary>
         /// Wait until a TCP client is trying to connect, and return the accepted TCP client.

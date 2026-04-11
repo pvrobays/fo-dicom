@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -25,6 +25,8 @@ namespace FellowOakDicom.Media
         public string DirectoryRecordType
             => GetSingleValue<string>(DicomTag.DirectoryRecordType);
 
+        public string Key { get; set; }
+
         #endregion
 
         public DicomDirectoryRecord()
@@ -47,6 +49,11 @@ namespace FellowOakDicom.Media
         {
         }
 
+        public DicomDirectoryRecord(IEnumerable<DicomItem> items, bool validateItems)
+            : base(items, validateItems)
+        {
+            ValidateItems = validateItems;
+        }
 
         public override string ToString()
         {

@@ -1,16 +1,15 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
 using FellowOakDicom.Network;
+using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
-using FellowOakDicom.Imaging.Codec;
 using Xunit;
-using System.Collections.Generic;
-using Microsoft.Extensions.Logging;
 
 namespace FellowOakDicom.Tests.Bugs
 {

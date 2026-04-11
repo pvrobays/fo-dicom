@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -11,64 +11,41 @@ namespace FellowOakDicom.StructuredReport
     public enum DicomValueType
     {
         Container,
-
         Text,
-
         Code,
-
         Numeric,
-
         PersonName,
-
         Date,
-
         Time,
-
         DateTime,
-
         UIDReference,
-
         Composite,
-
         Image,
-
         Waveform,
-
         SpatialCoordinate,
-
         TemporalCoordinate
     }
 
     public enum DicomContinuity
     {
         None,
-
         Separate,
-
         Continuous
     }
 
     public enum DicomRelationship
     {
         Contains,
-
         HasProperties,
-
         InferredFrom,
-
         SelectedFrom,
-
         HasObservationContext,
-
         HasAcquisitionContext,
-
         HasConceptModifier
     }
 
     public class DicomContentItem
     {
-        private DicomDataset _dataset;
-
         public DicomContentItem(DicomDataset dataset)
         {
             Dataset = dataset;
@@ -186,11 +163,7 @@ namespace FellowOakDicom.StructuredReport
             Dataset.Add(DicomTag.ContentSequence, items);
         }
 
-        public DicomDataset Dataset
-        {
-            get => _dataset;
-            private set => _dataset = value;
-        }
+        public DicomDataset Dataset { get; private set; }
 
         public DicomCodeItem Code
         {

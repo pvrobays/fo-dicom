@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -44,5 +44,34 @@ namespace FellowOakDicom.Tests
 
             Assert.Equal(expected, actual);
         }
+
+
+        public static TheoryData<DicomTag, DateTime, string> Datetimes = new TheoryData<DicomTag, DateTime, string> 
+        { 
+            // with Fraction
+            { DicomTag.AcquisitionDateTime, new DateTime(2007, 6, 28, 15, 19, 45, 406, DateTimeKind.Unspecified), "20070628151945.406" },
+            { DicomTag.AcquisitionDateTime, new DateTime(2007, 6, 28, 15, 19, 45, 400, DateTimeKind.Unspecified), "20070628151945.4" },
+            { DicomTag.StudyTime, new DateTime(2007, 6, 28, 15, 19, 45, 406, DateTimeKind.Unspecified), "151945.406" },
+            { DicomTag.StudyTime, new DateTime(2007, 6, 28, 15, 19, 45, 400, DateTimeKind.Unspecified), "151945.4" },
+            // without Fraction
+            { DicomTag.AcquisitionDateTime, new DateTime(2007, 6, 28, 15, 19, 45, DateTimeKind.Unspecified), "20070628151945" },
+            { DicomTag.AcquisitionDateTime, new DateTime(2007, 6, 28, 15, 0, 0, DateTimeKind.Unspecified), "20070628150000" },
+            { DicomTag.StudyTime, new DateTime(2007, 6, 28, 15, 19, 45, DateTimeKind.Unspecified), "151945" },
+            { DicomTag.StudyTime, new DateTime(2007, 6, 28, 15, 0, 0, DateTimeKind.Unspecified), "150000" }
+        };
+
+        [Theory]
+        [MemberData(nameof(Datetimes))]
+        public void AddDatetimeWithOrWithoutFraction(DicomTag tag, DateTime date, string expectedString)
+        {
+            var dataset = new DicomDataset
+            {
+                { tag, date }
+            };
+            var actualDateString = dataset.GetString(tag);
+
+            Assert.Equal(expectedString, actualDateString);
+        }
+
     }
 }

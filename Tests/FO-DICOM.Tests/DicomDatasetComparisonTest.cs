@@ -1,8 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
+// Licensed under the Microsoft Public License (MS-PL).
+
 using Xunit;
 
 namespace FellowOakDicom.Tests

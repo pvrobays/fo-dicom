@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2023 fo-dicom contributors.
+﻿// Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -54,7 +54,10 @@ namespace FellowOakDicom.Network
             {
                 _tcpClient.SendBufferSize = options.SendBufferSize.Value;
             }
-            _tcpClient.ConnectAsync(options.Host, options.Port).Wait();
+            if (!_tcpClient.ConnectAsync(options.Host, options.Port).Wait(options.ConnectionTimeout))
+            {
+                throw new TimeoutException();
+            }
 
             Stream stream = _tcpClient.GetStream();
             if (options.TlsInitiator != null)
