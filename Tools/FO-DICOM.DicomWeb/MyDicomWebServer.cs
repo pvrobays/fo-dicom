@@ -1,11 +1,11 @@
 ﻿using Bogus;
-using FellowOakDicom.AspNetCore.DicomWebServer;
+using FellowOakDicom.AspNetCore.DicomWebService;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace FellowOakDicom.DicomWeb
 {
-    public class MyDicomWebServer : DicomWebServer, IDicomQidoProvider
+    public class MyDicomWebServer : DicomWebService, IDicomQidoProvider
     {
         public readonly Faker _faker = new Faker();
         

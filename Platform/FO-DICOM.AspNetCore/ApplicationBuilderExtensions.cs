@@ -2,7 +2,7 @@
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
-using FellowOakDicom.AspNetCore.DicomWebServer;
+using FellowOakDicom.AspNetCore.DicomWebService;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using System;
@@ -18,7 +18,7 @@ namespace FellowOakDicom.AspNetCore
             return app;
         }
 
-        public static IApplicationBuilder MapDicomWebServer(this IApplicationBuilder app, string urlPrefix)
+        public static IApplicationBuilder MapDicomWebService(this IApplicationBuilder app, string urlPrefix)
         {
             urlPrefix = urlPrefix.TrimEnd('/');
             urlPrefix = urlPrefix.StartsWith("/") ? urlPrefix : $"/{urlPrefix}";
@@ -30,13 +30,13 @@ namespace FellowOakDicom.AspNetCore
                 endpoints.MapGet($"{urlPrefix}/studies", async context =>
                 {
                     // Resolve the dependency from the service provider
-                    var dicomWebServer = context.RequestServices.GetService<IDicomWebServer>();
-                    if (dicomWebServer is null)
+                    var dicomWebService = context.RequestServices.GetService<IDicomWebService>();
+                    if (dicomWebService is null)
                     {
-                        throw new InvalidOperationException("IDicomWebServer service not registered. Please create an implementation of the abstract DicomWebServer and inject this into the service collection.");
+                        throw new InvalidOperationException("IDicomWebService service not registered. Please create an implementation of the abstract DicomWebService and inject this into the service collection.");
                     }
 
-                    await dicomWebServer.HandleQidoStudiesRequestAsync(context);
+                    await dicomWebService.HandleQidoStudiesRequestAsync(context);
                 });
 
                 // TODO PJ: Add more endpoints here...

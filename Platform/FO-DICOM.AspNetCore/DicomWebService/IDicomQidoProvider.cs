@@ -2,7 +2,7 @@ using FellowOakDicom.DicomWeb;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace FellowOakDicom.AspNetCore.DicomWebServer
+namespace FellowOakDicom.AspNetCore.DicomWebService
 {
     public interface IDicomQidoProvider
     {

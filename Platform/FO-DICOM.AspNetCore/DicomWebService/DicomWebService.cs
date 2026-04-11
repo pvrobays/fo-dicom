@@ -8,15 +8,14 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace FellowOakDicom.AspNetCore.DicomWebServer
+namespace FellowOakDicom.AspNetCore.DicomWebService
 {
-    public interface IDicomWebServer
+    public interface IDicomWebService
     {
         Task HandleQidoStudiesRequestAsync(HttpContext context);
     }
 
-    //TODO PJ: rename to DicomWebService to be in line with DIMSE implementation?
-    public abstract class DicomWebServer : IDicomWebServer
+    public abstract class DicomWebService : IDicomWebService
     {
         
         private static readonly string[] _reservedQidoParameters = {

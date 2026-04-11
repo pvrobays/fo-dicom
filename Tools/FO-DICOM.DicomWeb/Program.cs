@@ -26,7 +26,7 @@ namespace FellowOakDicom.DicomWeb
             builder.Services.AddSwaggerGen();
             
             builder.Services.AddFellowOakDicom();
-            builder.Services.AddDicomWebServer<MyDicomWebServer>();
+            builder.Services.AddDicomWebService<MyDicomWebServer>();
             
             
             
@@ -46,7 +46,7 @@ namespace FellowOakDicom.DicomWeb
 
             app.MapControllers();
 
-            app.MapDicomWebServer("/dicomweb");
+            app.MapDicomWebService("/dicomweb");
 
             app.Run();
         }
