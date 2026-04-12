@@ -65,9 +65,9 @@ namespace FellowOakDicom.Tests.DicomWeb
         /// </summary>
         private class TestDicomWebService : DicomWebService, IDicomQidoProvider
         {
-            private readonly System.Func<DicomQidoRequest, CancellationToken, Task<IDicomQidoResponse>> _handler;
+            private readonly Func<DicomQidoRequest, CancellationToken, Task<IDicomQidoResponse>> _handler;
 
-            public TestDicomWebService(System.Func<DicomQidoRequest, CancellationToken, Task<IDicomQidoResponse>> handler)
+            public TestDicomWebService(Func<DicomQidoRequest, CancellationToken, Task<IDicomQidoResponse>> handler)
             {
                 _handler = handler;
             }
@@ -90,10 +90,10 @@ namespace FellowOakDicom.Tests.DicomWeb
         /// </summary>
         private class ConfigurableDicomWebService : DicomWebService, IDicomQidoProvider
         {
-            private readonly System.Func<DicomQidoRequest, CancellationToken, Task<IDicomQidoResponse>> _handler;
+            private readonly Func<DicomQidoRequest, CancellationToken, Task<IDicomQidoResponse>> _handler;
 
             public ConfigurableDicomWebService(
-                System.Func<DicomQidoRequest, CancellationToken, Task<IDicomQidoResponse>> handler,
+                Func<DicomQidoRequest, CancellationToken, Task<IDicomQidoResponse>> handler,
                 bool writeTagsAsKeywords = false,
                 bool formatJsonIndented = false,
                 bool strictQueryParameterParsing = true)

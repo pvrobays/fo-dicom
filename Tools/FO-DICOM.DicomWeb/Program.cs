@@ -38,8 +38,7 @@ namespace FellowOakDicom.DicomWeb
             // Add services to the container.
 
             builder.Services.AddControllers();
-            // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-            builder.Services.AddEndpointsApiExplorer(); //TODO PJ: try to get swagger working by default for dicomweb?
+            builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
             
             builder.Services.AddFellowOakDicom();

@@ -81,11 +81,9 @@ namespace FellowOakDicom.AspNetCore
 
         public static IServiceCollection AddDicomWebService<T>(this IServiceCollection services) where T : DicomWebService.DicomWebService
         {
-            services.AddControllers();
             return services
                 .UseFellowOakDicom()
-                .AddSingleton<IDicomWebService, T>(); //Should crash if there's already an implementation added!
-            //TODO PJ: add stuff like Endpoint mapper to DicomWebService request
+                .AddSingleton<IDicomWebService, T>();
         }
 
         #endregion
