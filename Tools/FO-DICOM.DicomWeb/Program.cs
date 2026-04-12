@@ -62,7 +62,8 @@ namespace FellowOakDicom.DicomWeb
 
             app.MapControllers();
 
-            app.MapDicomWebService("/dicomweb");
+            app.MapDicomWebService("/dicomweb")
+                .RequireRateLimiting("fixed"); //example of what you can do with the returned RouteGroupBuilder - apply metadata to all DICOMweb endpoints at once (e.g. auth, CORS, rate limiting, etc.)
 
             app.Run();
         }
