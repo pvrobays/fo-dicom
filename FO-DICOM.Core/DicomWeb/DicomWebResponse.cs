@@ -36,6 +36,20 @@ namespace FellowOakDicom.DicomWeb
     public class DicomWebForbiddenResponse : DicomWebFailureResponse { }
 
     /// <summary>
+    /// The requested resource does not exist (HTTP 404).
+    /// </summary>
+    public class DicomWebNotFoundResponse : DicomWebFailureResponse
+    {
+        /// <summary>An optional human-readable description of what was not found.</summary>
+        public string Reason { get; }
+
+        public DicomWebNotFoundResponse(string reason = null)
+        {
+            Reason = reason;
+        }
+    }
+
+    /// <summary>
     /// The requested operation is not implemented by this server (HTTP 501).
     /// </summary>
     public class DicomWebNotImplementedResponse : DicomWebFailureResponse { }

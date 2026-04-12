@@ -128,6 +128,15 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     break;
 
+                case DicomWebNotFoundResponse notFoundResponse:
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    if (notFoundResponse.Reason != null)
+                    {
+                        await context.Response.WriteAsync(notFoundResponse.Reason,
+                            cancellationToken: cancellationToken);
+                    }
+                    break;
+
                 case DicomWebUnavailableResponse unavailableResponse:
                     context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                     if (unavailableResponse.Reason != null)
