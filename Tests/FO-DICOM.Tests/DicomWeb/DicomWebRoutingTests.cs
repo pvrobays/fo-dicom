@@ -92,6 +92,66 @@ namespace FellowOakDicom.Tests.DicomWeb
         {
         }
 
+        /// <summary>
+        /// A <see cref="DicomWebService"/> implementing both QIDO and WADO providers.
+        /// Returns empty success responses so routing tests only check status codes.
+        /// </summary>
+        private class FullDicomWebService : DicomWebService, IDicomQidoProvider, IDicomWadoProvider
+        {
+            public Task<IDicomQidoResponse> OnQidoRequestAsync(
+                DicomQidoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+                => Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+
+            public Task<IDicomWadoResponse> OnRetrieveInstancesAsync(
+                DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+                => Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
+
+            public Task<IDicomWadoResponse> OnRetrieveMetadataAsync(
+                DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+                => Task.FromResult<IDicomWadoResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>()));
+        }
+
+        /// <summary>
+        /// A <see cref="DicomWebService"/> that implements only WADO, not QIDO.
+        /// QIDO requests should return 501; WADO requests should succeed.
+        /// </summary>
+        private class WadoOnlyDicomWebService : DicomWebService, IDicomWadoProvider
+        {
+            public Task<IDicomWadoResponse> OnRetrieveInstancesAsync(
+                DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+                => Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
+
+            public Task<IDicomWadoResponse> OnRetrieveMetadataAsync(
+                DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+                => Task.FromResult<IDicomWadoResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>()));
+        }
+
+        /// <summary>
+        /// Captures the last WADO request so routing tests can assert on injected UIDs.
+        /// </summary>
+        private class CapturingWadoService : DicomWebService, IDicomQidoProvider, IDicomWadoProvider
+        {
+            public DicomWadoRequest LastWadoRequest { get; private set; }
+
+            public Task<IDicomQidoResponse> OnQidoRequestAsync(
+                DicomQidoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+                => Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+
+            public Task<IDicomWadoResponse> OnRetrieveInstancesAsync(
+                DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+            {
+                LastWadoRequest = request;
+                return Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
+            }
+
+            public Task<IDicomWadoResponse> OnRetrieveMetadataAsync(
+                DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+            {
+                LastWadoRequest = request;
+                return Task.FromResult<IDicomWadoResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>()));
+            }
+        }
+
         // ─── Tests ────────────────────────────────────────────────────────────────
 
         [FactForNetCore]
@@ -286,6 +346,217 @@ namespace FellowOakDicom.Tests.DicomWeb
             var response = await client.GetAsync("/dicomweb/studies");
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        // ─── WADO-RS routing ──────────────────────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_GetStudyInstances_Wado_Returns200()
+        {
+            using var client = BuildTestClient<FullDicomWebService>();
+
+            var response = await client.GetAsync("/dicomweb/studies/1.2.3.4.5");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_GetSeriesInstances_Wado_Returns200()
+        {
+            using var client = BuildTestClient<FullDicomWebService>();
+
+            var response = await client.GetAsync("/dicomweb/studies/1.2.3/series/4.5.6");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_GetSingleInstance_Wado_Returns200()
+        {
+            using var client = BuildTestClient<FullDicomWebService>();
+
+            var response = await client.GetAsync("/dicomweb/studies/1.2.3/series/4.5.6/instances/7.8.9");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_GetStudyMetadata_Returns200()
+        {
+            using var client = BuildTestClient<FullDicomWebService>();
+
+            var response = await client.GetAsync("/dicomweb/studies/1.2.3/metadata");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_GetSeriesMetadata_Returns200()
+        {
+            using var client = BuildTestClient<FullDicomWebService>();
+
+            var response = await client.GetAsync("/dicomweb/studies/1.2.3/series/4.5.6/metadata");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_GetInstanceMetadata_Returns200()
+        {
+            using var client = BuildTestClient<FullDicomWebService>();
+
+            var response = await client.GetAsync("/dicomweb/studies/1.2.3/series/4.5.6/instances/7.8.9/metadata");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_WadoNoProvider_Returns501()
+        {
+            using var client = BuildTestClient<NoProviderDicomWebService>();
+
+            var response = await client.GetAsync("/dicomweb/studies/1.2.3.4.5");
+
+            Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_WadoOnly_QidoReturns501_WadoReturns200()
+        {
+            using var client = BuildTestClient<WadoOnlyDicomWebService>();
+
+            var qidoResponse = await client.GetAsync("/dicomweb/studies");
+            Assert.Equal(HttpStatusCode.NotImplemented, qidoResponse.StatusCode);
+
+            var wadoResponse = await client.GetAsync("/dicomweb/studies/1.2.3");
+            Assert.Equal(HttpStatusCode.OK, wadoResponse.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_WadoStudyRoute_InjectsStudyUidIntoRequest()
+        {
+            var service = new CapturingWadoService();
+            var host = new HostBuilder()
+                .ConfigureWebHost(webHost =>
+                {
+                    webHost.UseTestServer();
+                    webHost.ConfigureServices(services =>
+                    {
+                        services.AddFellowOakDicom();
+                        services.AddRouting();
+                        services.AddSingleton<IDicomWebService>(service);
+                    });
+                    webHost.Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints => endpoints.MapDicomWebService("/dicomweb"));
+                    });
+                })
+                .Build();
+            host.Start();
+            var client = host.GetTestServer().CreateClient();
+
+            await client.GetAsync("/dicomweb/studies/1.2.840.99999");
+
+            Assert.NotNull(service.LastWadoRequest);
+            Assert.Equal("1.2.840.99999", service.LastWadoRequest.StudyInstanceUid);
+            Assert.Null(service.LastWadoRequest.SeriesInstanceUid);
+            Assert.Null(service.LastWadoRequest.SopInstanceUid);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_WadoSeriesRoute_InjectsStudyAndSeriesUid()
+        {
+            var service = new CapturingWadoService();
+            var host = new HostBuilder()
+                .ConfigureWebHost(webHost =>
+                {
+                    webHost.UseTestServer();
+                    webHost.ConfigureServices(services =>
+                    {
+                        services.AddFellowOakDicom();
+                        services.AddRouting();
+                        services.AddSingleton<IDicomWebService>(service);
+                    });
+                    webHost.Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints => endpoints.MapDicomWebService("/dicomweb"));
+                    });
+                })
+                .Build();
+            host.Start();
+            var client = host.GetTestServer().CreateClient();
+
+            await client.GetAsync("/dicomweb/studies/1.2.3/series/4.5.6");
+
+            Assert.NotNull(service.LastWadoRequest);
+            Assert.Equal("1.2.3", service.LastWadoRequest.StudyInstanceUid);
+            Assert.Equal("4.5.6", service.LastWadoRequest.SeriesInstanceUid);
+            Assert.Null(service.LastWadoRequest.SopInstanceUid);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_WadoInstanceRoute_InjectsAllThreeUids()
+        {
+            var service = new CapturingWadoService();
+            var host = new HostBuilder()
+                .ConfigureWebHost(webHost =>
+                {
+                    webHost.UseTestServer();
+                    webHost.ConfigureServices(services =>
+                    {
+                        services.AddFellowOakDicom();
+                        services.AddRouting();
+                        services.AddSingleton<IDicomWebService>(service);
+                    });
+                    webHost.Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints => endpoints.MapDicomWebService("/dicomweb"));
+                    });
+                })
+                .Build();
+            host.Start();
+            var client = host.GetTestServer().CreateClient();
+
+            await client.GetAsync("/dicomweb/studies/1.2.3/series/4.5.6/instances/7.8.9");
+
+            Assert.NotNull(service.LastWadoRequest);
+            Assert.Equal("1.2.3", service.LastWadoRequest.StudyInstanceUid);
+            Assert.Equal("4.5.6", service.LastWadoRequest.SeriesInstanceUid);
+            Assert.Equal("7.8.9", service.LastWadoRequest.SopInstanceUid);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_WadoMetadataRoute_InjectsStudyUidIntoRequest()
+        {
+            var service = new CapturingWadoService();
+            var host = new HostBuilder()
+                .ConfigureWebHost(webHost =>
+                {
+                    webHost.UseTestServer();
+                    webHost.ConfigureServices(services =>
+                    {
+                        services.AddFellowOakDicom();
+                        services.AddRouting();
+                        services.AddSingleton<IDicomWebService>(service);
+                    });
+                    webHost.Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints => endpoints.MapDicomWebService("/dicomweb"));
+                    });
+                })
+                .Build();
+            host.Start();
+            var client = host.GetTestServer().CreateClient();
+
+            await client.GetAsync("/dicomweb/studies/1.2.3/metadata");
+
+            Assert.NotNull(service.LastWadoRequest);
+            Assert.Equal("1.2.3", service.LastWadoRequest.StudyInstanceUid);
+            Assert.Null(service.LastWadoRequest.SeriesInstanceUid);
         }
     }
 }
