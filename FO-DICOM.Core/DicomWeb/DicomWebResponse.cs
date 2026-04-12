@@ -5,11 +5,10 @@ namespace FellowOakDicom.DicomWeb
 {
     /// <summary>
     /// Base class for DICOMweb failure responses shared across QIDO-RS, WADO-RS, and STOW-RS.
-    /// Implements <see cref="IDicomQidoResponse"/> so it can be returned from
-    /// <see cref="FellowOakDicom.AspNetCore.DicomWebService.IDicomQidoProvider.OnQidoRequestAsync"/>
-    /// today; future service types will introduce their own parallel marker interfaces.
+    /// Implements both <see cref="IDicomQidoResponse"/> and <see cref="IDicomWadoResponse"/> so
+    /// that a single failure type can be returned from any provider method without casting.
     /// </summary>
-    public abstract class DicomWebFailureResponse : IDicomQidoResponse { }
+    public abstract class DicomWebFailureResponse : IDicomQidoResponse, IDicomWadoResponse { }
 
     /// <summary>
     /// The request could not be understood or contained invalid parameters (HTTP 400).
