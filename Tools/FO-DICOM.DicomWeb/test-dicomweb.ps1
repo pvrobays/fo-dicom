@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    DICOMweb QIDO-RS Test Script
+    DICOMweb QIDO-RS and WADO-RS Test Script
 
 .DESCRIPTION
     Tests the demo DICOMweb application (FO-DICOM.DicomWeb) using curl.
@@ -316,4 +316,72 @@ Run-Test -Label "35. Instance pagination (limit=2, offset=0)" `
 
 Write-Host "=============================================" -ForegroundColor Yellow
 Write-Host " Done!" -ForegroundColor Yellow
+Write-Host "=============================================" -ForegroundColor Yellow
+
+# ===========================================================================
+#  WADO-RS: Instance Retrieval (PS3.18 Table 10.4.1-1)
+# ===========================================================================
+
+Write-Host "" 
+Write-Host "=============================================" -ForegroundColor Yellow
+Write-Host " WADO-RS: Instance Retrieval Tests" -ForegroundColor Yellow
+Write-Host "=============================================" -ForegroundColor Yellow
+Write-Host ""
+
+# Use a real-looking UID for the WADO tests
+$wadoStudyUid  = "1.2.840.10008.5.1.4.1.1.2.1"
+$wadoSeriesUid = "1.2.840.10008.5.1.4.1.1.2.2"
+$wadoSopUid    = "1.2.840.10008.5.1.4.1.1.2.3"
+
+Run-Test -Label "36. WADO — Retrieve study instances" `
+    -Url "$BaseUrl/studies/$wadoStudyUid" `
+    -Description "GET /studies/{study} — multipart/related; type=application/dicom" `
+    -MaxBodyChars 300
+
+Run-Test -Label "37. WADO — Retrieve series instances" `
+    -Url "$BaseUrl/studies/$wadoStudyUid/series/$wadoSeriesUid" `
+    -Description "GET /studies/{study}/series/{series}" `
+    -MaxBodyChars 300
+
+Run-Test -Label "38. WADO — Retrieve single instance" `
+    -Url "$BaseUrl/studies/$wadoStudyUid/series/$wadoSeriesUid/instances/$wadoSopUid" `
+    -Description "GET /studies/{study}/series/{series}/instances/{instance}" `
+    -MaxBodyChars 300
+
+# ===========================================================================
+#  WADO-RS: Metadata Retrieval (PS3.18 Table 10.4.1-2)
+# ===========================================================================
+
+Write-Host "=============================================" -ForegroundColor Yellow
+Write-Host " WADO-RS: Metadata Retrieval Tests" -ForegroundColor Yellow
+Write-Host "=============================================" -ForegroundColor Yellow
+Write-Host ""
+
+Run-Test -Label "39. WADO — Study metadata (JSON)" `
+    -Url "$BaseUrl/studies/$wadoStudyUid/metadata" `
+    -Description "GET /studies/{study}/metadata — application/dicom+json" `
+    -MaxBodyChars 800
+
+Run-Test -Label "40. WADO — Series metadata (JSON)" `
+    -Url "$BaseUrl/studies/$wadoStudyUid/series/$wadoSeriesUid/metadata" `
+    -Description "GET /studies/{study}/series/{series}/metadata" `
+    -MaxBodyChars 800
+
+Run-Test -Label "41. WADO — Instance metadata (JSON)" `
+    -Url "$BaseUrl/studies/$wadoStudyUid/series/$wadoSeriesUid/instances/$wadoSopUid/metadata" `
+    -Description "GET /studies/{study}/series/{series}/instances/{instance}/metadata" `
+    -MaxBodyChars 800
+
+Run-Test -Label "42. WADO — Instance metadata (XML via Accept header)" `
+    -Url "$BaseUrl/studies/$wadoStudyUid/series/$wadoSeriesUid/instances/$wadoSopUid/metadata" `
+    -Description "Accept: multipart/related; type=application/dicom+xml" `
+    -MaxBodyChars 800
+
+# Note: Invoke-WebRequest doesn't easily support custom Accept headers,
+# so test 42 above uses default JSON. Use curl to test XML:
+# curl -k -H 'Accept: multipart/related; type="application/dicom+xml"' \
+#   https://localhost:7215/dicomweb/studies/$wadoStudyUid/metadata
+
+Write-Host "=============================================" -ForegroundColor Yellow
+Write-Host " All tests complete!" -ForegroundColor Yellow
 Write-Host "=============================================" -ForegroundColor Yellow

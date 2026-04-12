@@ -1,14 +1,16 @@
 using Bogus;
 using FellowOakDicom.AspNetCore.DicomWebService;
+using FellowOakDicom.DicomWeb;
 using Microsoft.AspNetCore.Http;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace FellowOakDicom.DicomWeb
 {
-    public class MyDicomWebServer : DicomWebService, IDicomQidoProvider
+    public class MyDicomWebServer : DicomWebService, IDicomQidoProvider, IDicomWadoProvider
     {
         public readonly Faker _faker = new Faker();
         
@@ -50,6 +52,61 @@ namespace FellowOakDicom.DicomWeb
             }
             
             return response;
+        }
+
+        // ── WADO-RS: Instance Retrieval ────────────────────────────────────────────
+
+        public Task<IDicomWadoResponse> OnRetrieveInstancesAsync(
+            DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+        {
+            // TODO: Look up instances from storage by request.StudyInstanceUid,
+            //       request.SeriesInstanceUid, and request.SopInstanceUid.
+            //
+            // Example (DicomFile list):
+            //   var files = await _store.GetInstancesAsync(request, cancellationToken);
+            //   return new DicomWadoInstancesResponse(files);
+            //
+            // Example (raw streams for large studies — no re-parsing):
+            //   var streams = await _store.GetRawInstanceStreamsAsync(request, cancellationToken);
+            //   return new DicomWadoRawInstancesResponse(streams);
+            //
+            // Example (streaming for very large studies):
+            //   return new DicomWadoAsyncInstancesResponse(
+            //       _store.StreamInstancesAsync(request, cancellationToken));
+
+            // For the demo, return an empty multipart response (no files stored).
+            IDicomWadoResponse response = new DicomWadoInstancesResponse(new List<DicomFile>());
+            return Task.FromResult(response);
+        }
+
+        // ── WADO-RS: Metadata Retrieval ────────────────────────────────────────────
+
+        public Task<IDicomWadoResponse> OnRetrieveMetadataAsync(
+            DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+        {
+            // TODO: Look up metadata (DICOM datasets without pixel data) from storage.
+            //       Return datasets with bulk data attributes removed or replaced with URIs.
+            //
+            // Example:
+            //   var datasets = await _store.GetMetadataAsync(request, cancellationToken);
+            //   return new DicomWadoMetadataResponse(datasets);
+            //
+            // Example (streaming):
+            //   return new DicomWadoAsyncMetadataResponse(
+            //       _store.StreamMetadataAsync(request, cancellationToken));
+
+            // For the demo, return one fake metadata dataset.
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.StudyInstanceUID, request.StudyInstanceUid ?? DicomUID.Generate().UID);
+            dataset.Add(DicomTag.SeriesInstanceUID, request.SeriesInstanceUid ?? DicomUID.Generate().UID);
+            dataset.Add(DicomTag.SOPInstanceUID, request.SopInstanceUid ?? DicomUID.Generate().UID);
+            dataset.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage.UID);
+            dataset.Add(DicomTag.PatientID, _faker.Random.String2(8));
+            dataset.Add(DicomTag.PatientName, $"{_faker.Name.LastName()}^{_faker.Name.FirstName()}");
+            dataset.Add(DicomTag.Modality, _faker.PickRandom("CT", "MR", "US", "XR", "PT"));
+
+            IDicomWadoResponse response = new DicomWadoMetadataResponse(new List<DicomDataset> { dataset });
+            return Task.FromResult(response);
         }
 
         /// <summary>
