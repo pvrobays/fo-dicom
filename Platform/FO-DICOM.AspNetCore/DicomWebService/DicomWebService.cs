@@ -110,7 +110,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// <see cref="DicomQidoRequestOptions.IsFuzzyMatching"/> when building Warning headers).
         /// <para>
         /// The returned <see cref="DicomQidoRequest"/> is <c>null</c> when request parsing fails
-        /// (the response will be a <see cref="DicomQidoBadRequestResponse"/> in that case).
+        /// (the response will be a <see cref="DicomWebBadRequestResponse"/> in that case).
         /// </para>
         /// </summary>
         private async Task<(IDicomQidoResponse response, DicomQidoRequest request)> InnerHandleQidoRequestAsync(
@@ -119,7 +119,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             if (!(this is IDicomQidoProvider thisAsQidoProvider))
             {
                 _logger.LogDebug("QIDO {Level} request received but no IDicomQidoProvider is implemented — returning 501", level);
-                return (new DicomQidoNotImplementedResponse(), null);
+                return (new DicomWebNotImplementedResponse(), null);
             }
 
             DicomQidoRequest request;
@@ -145,7 +145,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             {
                 _logger.LogWarning(e, "QIDO {Level} request rejected: failed to parse query string — {Reason}",
                     level, e.Message);
-                return (new DicomQidoBadRequestResponse(e.Message), null);
+                return (new DicomWebBadRequestResponse(e.Message), null);
             }
 
             try
@@ -157,7 +157,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             {
                 _logger.LogError(e, "QIDO {Level} request failed: unhandled exception in OnQidoRequestAsync",
                     level);
-                return (new DicomQidoUnavailableResponse(e.Message), request);
+                return (new DicomWebUnavailableResponse(e.Message), request);
             }
         }
     }

@@ -70,7 +70,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// <param name="response">The QIDO response returned by the provider.</param>
         /// <param name="request">
         /// The parsed QIDO request, or <c>null</c> when request parsing failed
-        /// (in which case <paramref name="response"/> is a <see cref="DicomQidoBadRequestResponse"/>).
+        /// (in which case <paramref name="response"/> is a <see cref="DicomWebBadRequestResponse"/>).
         /// </param>
         /// <param name="cancellationToken">Propagated cancellation token.</param>
         internal async Task ExecuteAsync(
@@ -107,7 +107,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     }
                     break;
 
-                case DicomQidoBadRequestResponse badRequestResponse:
+                case DicomWebBadRequestResponse badRequestResponse:
                     context.Response.StatusCode = StatusCodes.Status400BadRequest;
                     if (badRequestResponse.Reason != null)
                     {
@@ -116,19 +116,19 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     }
                     break;
 
-                case DicomQidoForbiddenResponse _:
-                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                    break;
-
                 case DicomQidoRequestTooBroadResponse _:
                     context.Response.StatusCode = StatusCodes.Status413RequestEntityTooLarge;
                     break;
 
-                case DicomQidoUnauthorizedResponse _:
+                case DicomWebForbiddenResponse _:
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    break;
+
+                case DicomWebUnauthorizedResponse _:
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     break;
 
-                case DicomQidoUnavailableResponse unavailableResponse:
+                case DicomWebUnavailableResponse unavailableResponse:
                     context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                     if (unavailableResponse.Reason != null)
                     {
@@ -137,7 +137,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     }
                     break;
 
-                case DicomQidoNotImplementedResponse _:
+                case DicomWebNotImplementedResponse _:
                     context.Response.StatusCode = StatusCodes.Status501NotImplemented;
                     break;
 

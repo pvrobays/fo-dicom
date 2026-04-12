@@ -22,8 +22,9 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// </param>
         /// <param name="cancellationToken">Cancellation token tied to the HTTP request lifetime.</param>
         /// <returns>
-        /// An <see cref="IDicomQidoResponse"/> — typically a <see cref="DicomQidoSuccessResponse"/>
-        /// with result datasets, or one of the typed failure responses.
+        /// An <see cref="IDicomQidoResponse"/> — either a <see cref="DicomQidoSuccessResponse"/>
+        /// with result datasets, or one of the typed failure responses such as
+        /// <see cref="DicomWebBadRequestResponse"/>, <see cref="DicomWebUnauthorizedResponse"/>, etc.
         /// </returns>
         Task<IDicomQidoResponse> OnQidoRequestAsync(DicomQidoRequest request, HttpContext httpContext, CancellationToken cancellationToken);
     }

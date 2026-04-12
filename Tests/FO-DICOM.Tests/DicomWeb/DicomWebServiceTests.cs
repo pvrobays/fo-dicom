@@ -217,7 +217,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         public async Task HandleQidoStudiesRequest_BadRequestResponse_Returns400()
         {
             var service = new TestDicomWebService((req, ct) =>
-                Task.FromResult<IDicomQidoResponse>(new DicomQidoBadRequestResponse("bad")));
+                Task.FromResult<IDicomQidoResponse>(new DicomWebBadRequestResponse("bad")));
             var context = BuildHttpContext();
 
             await service.HandleQidoStudiesRequestAsync(context);
@@ -229,7 +229,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         public async Task HandleQidoStudiesRequest_UnauthorizedResponse_Returns401()
         {
             var service = new TestDicomWebService((req, ct) =>
-                Task.FromResult<IDicomQidoResponse>(new DicomQidoUnauthorizedResponse()));
+                Task.FromResult<IDicomQidoResponse>(new DicomWebUnauthorizedResponse()));
             var context = BuildHttpContext();
 
             await service.HandleQidoStudiesRequestAsync(context);
@@ -241,7 +241,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         public async Task HandleQidoStudiesRequest_ForbiddenResponse_Returns403()
         {
             var service = new TestDicomWebService((req, ct) =>
-                Task.FromResult<IDicomQidoResponse>(new DicomQidoForbiddenResponse()));
+                Task.FromResult<IDicomQidoResponse>(new DicomWebForbiddenResponse()));
             var context = BuildHttpContext();
 
             await service.HandleQidoStudiesRequestAsync(context);
@@ -265,7 +265,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         public async Task HandleQidoStudiesRequest_UnavailableResponse_Returns503()
         {
             var service = new TestDicomWebService((req, ct) =>
-                Task.FromResult<IDicomQidoResponse>(new DicomQidoUnavailableResponse("down")));
+                Task.FromResult<IDicomQidoResponse>(new DicomWebUnavailableResponse("down")));
             var context = BuildHttpContext();
 
             await service.HandleQidoStudiesRequestAsync(context);
@@ -2515,7 +2515,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         {
             // Bad request should not carry any Warning headers
             var service = new TestDicomWebService((req, ct) =>
-                Task.FromResult<IDicomQidoResponse>(new DicomQidoBadRequestResponse("test error")));
+                Task.FromResult<IDicomQidoResponse>(new DicomWebBadRequestResponse("test error")));
             var context = BuildHttpContext();
 
             await service.HandleQidoStudiesRequestAsync(context);
