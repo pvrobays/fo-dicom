@@ -130,13 +130,13 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 // Inject route-scoped UIDs as match constraints.
                 // These come from URL path templates (e.g. /studies/{studyInstanceUID}/series)
                 // and take precedence over any query-string values for the same tag.
-                if (context.Request.RouteValues.TryGetValue("studyInstanceUID", out var studyUid)
-                    && studyUid is string studyUidString)
+                var studyUidString = RouteUidHelper.GetRouteUid(context, "studyInstanceUID");
+                if (studyUidString != null)
                 {
                     request.Dataset.AddOrUpdate(DicomTag.StudyInstanceUID, studyUidString);
                 }
-                if (context.Request.RouteValues.TryGetValue("seriesInstanceUID", out var seriesUid)
-                    && seriesUid is string seriesUidString)
+                var seriesUidString = RouteUidHelper.GetRouteUid(context, "seriesInstanceUID");
+                if (seriesUidString != null)
                 {
                     request.Dataset.AddOrUpdate(DicomTag.SeriesInstanceUID, seriesUidString);
                 }
