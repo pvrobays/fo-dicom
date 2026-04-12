@@ -17,6 +17,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
     {
         private readonly ILogger _logger;
         private QidoResponseWriter _responseWriter;
+        private WadoResponseWriter _wadoResponseWriter;
 
         /// <summary>
         /// Initializes the service with an optional <see cref="ILoggerFactory"/>.
@@ -81,6 +82,14 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// </summary>
         private QidoResponseWriter ResponseWriter =>
             _responseWriter ?? (_responseWriter = new QidoResponseWriter(ServiceName, WriteTagsAsKeywords, FormatJsonIndented));
+
+        /// <summary>
+        /// Returns the lazily-initialised <see cref="WadoResponseWriter"/> for this service
+        /// instance. The writer is created once from the virtual configuration properties and
+        /// reused across all requests.
+        /// </summary>
+        private WadoResponseWriter WadoWriter =>
+            _wadoResponseWriter ?? (_wadoResponseWriter = new WadoResponseWriter(ServiceName, WriteTagsAsKeywords, FormatJsonIndented));
 
         public async Task HandleQidoStudiesRequestAsync(HttpContext context)
         {
@@ -158,6 +167,69 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 _logger.LogError(e, "QIDO {Level} request failed: unhandled exception in OnQidoRequestAsync",
                     level);
                 return (new DicomWebUnavailableResponse(e.Message), request);
+            }
+        }
+
+        // ── WADO-RS ─────────────────────────────────────────────────────────────
+
+        public async Task HandleWadoInstancesRequestAsync(HttpContext context)
+        {
+            var cancellationToken = context.RequestAborted;
+            var wadoRequest = BuildWadoRequest(context);
+            var response = await InnerHandleWadoRequestAsync(
+                wadoRequest, context, cancellationToken,
+                (provider, req, ctx, ct) => provider.OnRetrieveInstancesAsync(req, ctx, ct),
+                "instances");
+            await WadoWriter.ExecuteInstancesAsync(context, response, cancellationToken);
+        }
+
+        public async Task HandleWadoMetadataRequestAsync(HttpContext context)
+        {
+            var cancellationToken = context.RequestAborted;
+            var wadoRequest = BuildWadoRequest(context);
+            var response = await InnerHandleWadoRequestAsync(
+                wadoRequest, context, cancellationToken,
+                (provider, req, ctx, ct) => provider.OnRetrieveMetadataAsync(req, ctx, ct),
+                "metadata");
+            await WadoWriter.ExecuteMetadataAsync(context, response, cancellationToken);
+        }
+
+        /// <summary>
+        /// Builds a <see cref="DicomWadoRequest"/> from the route values in the current HTTP context.
+        /// </summary>
+        private static DicomWadoRequest BuildWadoRequest(HttpContext context)
+        {
+            var studyUid = RouteUidHelper.GetRouteUid(context, "studyInstanceUID");
+            var seriesUid = RouteUidHelper.GetRouteUid(context, "seriesInstanceUID");
+            var sopUid = RouteUidHelper.GetRouteUid(context, "sopInstanceUID");
+            return new DicomWadoRequest(studyUid, seriesUid, sopUid);
+        }
+
+        /// <summary>
+        /// Checks that an <see cref="IDicomWadoProvider"/> is implemented, then delegates to the
+        /// appropriate provider method. Returns a failure response on missing provider or exception.
+        /// </summary>
+        private async Task<IDicomWadoResponse> InnerHandleWadoRequestAsync(
+            DicomWadoRequest request,
+            HttpContext context,
+            CancellationToken cancellationToken,
+            Func<IDicomWadoProvider, DicomWadoRequest, HttpContext, CancellationToken, Task<IDicomWadoResponse>> invoke,
+            string operationName)
+        {
+            if (!(this is IDicomWadoProvider thisAsWadoProvider))
+            {
+                _logger.LogDebug("WADO {Operation} request received but no IDicomWadoProvider is implemented — returning 501", operationName);
+                return new DicomWebNotImplementedResponse();
+            }
+
+            try
+            {
+                return await invoke(thisAsWadoProvider, request, context, cancellationToken);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "WADO {Operation} request failed: unhandled exception in provider", operationName);
+                return new DicomWebUnavailableResponse(e.Message);
             }
         }
     }
