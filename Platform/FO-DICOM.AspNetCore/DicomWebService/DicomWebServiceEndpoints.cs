@@ -14,7 +14,7 @@ namespace FellowOakDicom.AspNetCore
     public static partial class ApplicationBuilderExtensions
     {
         /// <summary>
-        /// Maps all QIDO-RS endpoints (studies, series, instances) under the given URL prefix.
+        /// Maps all DICOMweb endpoints (QIDO-RS and WADO-RS) under the given URL prefix.
         /// <para>
         /// Returns a <see cref="RouteGroupBuilder"/> so callers can chain endpoint metadata such as
         /// <c>.RequireAuthorization()</c>, <c>.RequireCors()</c>, or custom <c>.WithMetadata()</c>.
@@ -41,12 +41,12 @@ namespace FellowOakDicom.AspNetCore
 
             var group = endpoints.MapGroup(urlPrefix);
 
-            // ── Studies ────────────────────────────────────────────────────────────
+            // ── QIDO-RS: Studies ───────────────────────────────────────────────
             // PS3.18 Table 10.6.1-1: All Studies
             group.MapGet("/studies", (HttpContext context) =>
                 HandleDicomWebAsync(context, (svc, ctx) => svc.HandleQidoStudiesRequestAsync(ctx)));
 
-            // ── Series ─────────────────────────────────────────────────────────────
+            // ── QIDO-RS: Series ────────────────────────────────────────────────
             // PS3.18 Table 10.6.1-1: Study's Series (studyInstanceUID scopes the search)
             group.MapGet("/studies/{studyInstanceUID}/series", (HttpContext context) =>
                 HandleDicomWebAsync(context, (svc, ctx) => svc.HandleQidoSeriesRequestAsync(ctx)));
@@ -55,7 +55,7 @@ namespace FellowOakDicom.AspNetCore
             group.MapGet("/series", (HttpContext context) =>
                 HandleDicomWebAsync(context, (svc, ctx) => svc.HandleQidoSeriesRequestAsync(ctx)));
 
-            // ── Instances ──────────────────────────────────────────────────────────
+            // ── QIDO-RS: Instances ─────────────────────────────────────────────
             // PS3.18 Table 10.6.1-1: Study's Series' Instances (both UIDs scope the search)
             group.MapGet("/studies/{studyInstanceUID}/series/{seriesInstanceUID}/instances", (HttpContext context) =>
                 HandleDicomWebAsync(context, (svc, ctx) => svc.HandleQidoInstancesRequestAsync(ctx)));
@@ -67,6 +67,32 @@ namespace FellowOakDicom.AspNetCore
             // PS3.18 Table 10.6.1-1: All Instances (relational, no study/series scope)
             group.MapGet("/instances", (HttpContext context) =>
                 HandleDicomWebAsync(context, (svc, ctx) => svc.HandleQidoInstancesRequestAsync(ctx)));
+
+            // ── WADO-RS: Instance Resources (PS3.18 Table 10.4.1-1) ────────────
+            // Retrieve all instances in a study
+            group.MapGet("/studies/{studyInstanceUID}", (HttpContext context) =>
+                HandleDicomWebAsync(context, (svc, ctx) => svc.HandleWadoInstancesRequestAsync(ctx)));
+
+            // Retrieve all instances in a series
+            group.MapGet("/studies/{studyInstanceUID}/series/{seriesInstanceUID}", (HttpContext context) =>
+                HandleDicomWebAsync(context, (svc, ctx) => svc.HandleWadoInstancesRequestAsync(ctx)));
+
+            // Retrieve a single instance
+            group.MapGet("/studies/{studyInstanceUID}/series/{seriesInstanceUID}/instances/{sopInstanceUID}", (HttpContext context) =>
+                HandleDicomWebAsync(context, (svc, ctx) => svc.HandleWadoInstancesRequestAsync(ctx)));
+
+            // ── WADO-RS: Metadata Resources (PS3.18 Table 10.4.1-2) ────────────
+            // Study-level metadata
+            group.MapGet("/studies/{studyInstanceUID}/metadata", (HttpContext context) =>
+                HandleDicomWebAsync(context, (svc, ctx) => svc.HandleWadoMetadataRequestAsync(ctx)));
+
+            // Series-level metadata
+            group.MapGet("/studies/{studyInstanceUID}/series/{seriesInstanceUID}/metadata", (HttpContext context) =>
+                HandleDicomWebAsync(context, (svc, ctx) => svc.HandleWadoMetadataRequestAsync(ctx)));
+
+            // Instance-level metadata
+            group.MapGet("/studies/{studyInstanceUID}/series/{seriesInstanceUID}/instances/{sopInstanceUID}/metadata", (HttpContext context) =>
+                HandleDicomWebAsync(context, (svc, ctx) => svc.HandleWadoMetadataRequestAsync(ctx)));
 
             return group;
         }
