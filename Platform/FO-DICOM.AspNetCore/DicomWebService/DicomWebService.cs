@@ -201,7 +201,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
             try
             {
-                return await thisAsQidoProvider.OnQidoRequestAsync(request, cancellationToken);
+                return await thisAsQidoProvider.OnQidoRequestAsync(request, context, cancellationToken);
             }
             catch (Exception e)
             {

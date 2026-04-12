@@ -72,7 +72,7 @@ namespace FellowOakDicom.Tests.DicomWeb
                 _handler = handler;
             }
 
-            public Task<IDicomQidoResponse> OnQidoRequestAsync(DicomQidoRequest request, CancellationToken cancellationToken)
+            public Task<IDicomQidoResponse> OnQidoRequestAsync(DicomQidoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
                 => _handler(request, cancellationToken);
         }
 
@@ -112,7 +112,7 @@ namespace FellowOakDicom.Tests.DicomWeb
             protected override bool FormatJsonIndented => FormatJsonIndentedOverride;
             protected override bool StrictQueryParameterParsing => StrictQueryParameterParsingOverride;
 
-            public Task<IDicomQidoResponse> OnQidoRequestAsync(DicomQidoRequest request, CancellationToken cancellationToken)
+            public Task<IDicomQidoResponse> OnQidoRequestAsync(DicomQidoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
                 => _handler(request, cancellationToken);
         }
 

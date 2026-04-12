@@ -1,5 +1,6 @@
 using Bogus;
 using FellowOakDicom.AspNetCore.DicomWebService;
+using Microsoft.AspNetCore.Http;
 using System;
 using System.Linq;
 using System.Threading;
@@ -11,9 +12,11 @@ namespace FellowOakDicom.DicomWeb
     {
         public readonly Faker _faker = new Faker();
         
-        public async Task<IDicomQidoResponse> OnQidoRequestAsync(DicomQidoRequest request, CancellationToken cancellationToken)
+        public async Task<IDicomQidoResponse> OnQidoRequestAsync(DicomQidoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
         {
-            //TODO PJ: check authentication?
+            // httpContext.User  — inspect JWT claims (e.g. httpContext.User.FindFirst("sub"))
+            // httpContext.Connection.ClientCertificate  — inspect mTLS client certificate
+            // httpContext.Request.Headers  — inspect custom headers (e.g. X-Tenant-Id)
             
             var response = new DicomQidoSuccessResponse
             {
