@@ -16,6 +16,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
     public abstract class DicomWebService : IDicomWebService
     {
         private readonly ILogger _logger;
+        private QidoResponseWriter _responseWriter;
 
         /// <summary>
         /// Initializes the service with an optional <see cref="ILoggerFactory"/>.
@@ -67,38 +68,39 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// The warn-agent identifier included in HTTP <c>Warning</c> response headers
         /// (RFC 7234 Section 5.5, PS3.18 Section 8.3.4).
         /// <para>
-        /// When <c>null</c> (default), the value of the <c>Host</c> request header is used
-        /// (e.g. <c>"pacs.example.com:8080"</c>).  Override to supply a fixed service name
-        /// (e.g. <c>"my-pacs.example.com"</c>) that is independent of the Host header.
+        /// Defaults to <c>"fo-dicom-web"</c>. Override to supply a more specific service name
+        /// (e.g. <c>"pacs.example.com"</c>) that helps clients identify the origin of the warning.
         /// </para>
         /// </summary>
-        protected virtual string ServiceName => null;
+        protected virtual string ServiceName => "fo-dicom-web";
+
+        /// <summary>
+        /// Returns the lazily-initialised <see cref="QidoResponseWriter"/> for this service
+        /// instance. The writer is created once from the virtual configuration properties and
+        /// reused across all requests.
+        /// </summary>
+        private QidoResponseWriter ResponseWriter =>
+            _responseWriter ?? (_responseWriter = new QidoResponseWriter(ServiceName, WriteTagsAsKeywords, FormatJsonIndented));
 
         public async Task HandleQidoStudiesRequestAsync(HttpContext context)
         {
             var cancellationToken = context.RequestAborted;
             var (response, request) = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Study, context, cancellationToken);
-            await QidoResponseWriter.ExecuteAsync(context, response, request,
-                ServiceName ?? context.Request.Host.ToString(),
-                WriteTagsAsKeywords, FormatJsonIndented, cancellationToken);
+            await ResponseWriter.ExecuteAsync(context, response, request, cancellationToken);
         }
 
         public async Task HandleQidoSeriesRequestAsync(HttpContext context)
         {
             var cancellationToken = context.RequestAborted;
             var (response, request) = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Series, context, cancellationToken);
-            await QidoResponseWriter.ExecuteAsync(context, response, request,
-                ServiceName ?? context.Request.Host.ToString(),
-                WriteTagsAsKeywords, FormatJsonIndented, cancellationToken);
+            await ResponseWriter.ExecuteAsync(context, response, request, cancellationToken);
         }
 
         public async Task HandleQidoInstancesRequestAsync(HttpContext context)
         {
             var cancellationToken = context.RequestAborted;
             var (response, request) = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Image, context, cancellationToken);
-            await QidoResponseWriter.ExecuteAsync(context, response, request,
-                ServiceName ?? context.Request.Host.ToString(),
-                WriteTagsAsKeywords, FormatJsonIndented, cancellationToken);
+            await ResponseWriter.ExecuteAsync(context, response, request, cancellationToken);
         }
 
         /// <summary>

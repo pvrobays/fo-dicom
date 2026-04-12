@@ -2481,18 +2481,16 @@ namespace FellowOakDicom.Tests.DicomWeb
         }
 
         [FactForNetCore]
-        public async Task WarningHeader_UsesRequestHostAsWarnAgentByDefault()
+        public async Task WarningHeader_DefaultServiceName_UsesFoDicomWeb()
         {
             var service = new TestDicomWebService((req, ct) =>
                 Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse { IsServerMaximumResultsReached = true }));
             var context = BuildHttpContext();
-            // DefaultHttpContext has no Host by default; set one explicitly
-            context.Request.Host = new HostString("pacs.example.com", 8080);
 
             await service.HandleQidoStudiesRequestAsync(context);
 
             var warningValue = context.Response.Headers["Warning"].ToString();
-            Assert.Contains("pacs.example.com:8080", warningValue);
+            Assert.Contains("fo-dicom-web", warningValue);
         }
 
         [FactForNetCore]

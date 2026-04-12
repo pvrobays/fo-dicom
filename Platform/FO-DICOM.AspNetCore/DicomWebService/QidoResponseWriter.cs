@@ -31,9 +31,37 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
     /// <summary>
     /// Translates a <see cref="IDicomQidoResponse"/> into an HTTP response, handling content
     /// negotiation, response serialization (JSON and multipart XML), and PS3.18 Warning headers.
+    /// <para>
+    /// Instances are reusable across requests — create one per <see cref="DicomWebService"/>
+    /// configuration and retain it for the lifetime of the service.
+    /// </para>
     /// </summary>
-    internal static class QidoResponseWriter
+    internal class QidoResponseWriter
     {
+        private readonly string _serviceAgent;
+        private readonly bool _writeTagsAsKeywords;
+        private readonly bool _formatJsonIndented;
+
+        /// <summary>
+        /// Creates a writer with the given formatting configuration.
+        /// </summary>
+        /// <param name="serviceAgent">
+        /// The warn-agent identifier for RFC 7234 <c>Warning</c> headers
+        /// (e.g. <c>"fo-dicom-web"</c> or <c>"pacs.example.com"</c>).
+        /// </param>
+        /// <param name="writeTagsAsKeywords">
+        /// When <c>true</c>, DICOM JSON uses keyword names instead of hex tag keys.
+        /// </param>
+        /// <param name="formatJsonIndented">
+        /// When <c>true</c>, JSON output is pretty-printed.
+        /// </param>
+        internal QidoResponseWriter(string serviceAgent, bool writeTagsAsKeywords, bool formatJsonIndented)
+        {
+            _serviceAgent = serviceAgent;
+            _writeTagsAsKeywords = writeTagsAsKeywords;
+            _formatJsonIndented = formatJsonIndented;
+        }
+
         /// <summary>
         /// Writes the full HTTP response for a QIDO-RS result, including status code, headers,
         /// and body serialization.
@@ -44,39 +72,25 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// The parsed QIDO request, or <c>null</c> when request parsing failed
         /// (in which case <paramref name="response"/> is a <see cref="DicomQidoBadRequestResponse"/>).
         /// </param>
-        /// <param name="serviceAgent">
-        /// The warn-agent string for <c>Warning</c> headers (e.g. the Host header value or a
-        /// configured service name).
-        /// </param>
-        /// <param name="writeTagsAsKeywords">
-        /// When <c>true</c>, DICOM JSON uses keyword names instead of hex tag keys.
-        /// </param>
-        /// <param name="formatJsonIndented">
-        /// When <c>true</c>, JSON output is pretty-printed.
-        /// </param>
         /// <param name="cancellationToken">Propagated cancellation token.</param>
-        internal static async Task ExecuteAsync(
+        internal async Task ExecuteAsync(
             HttpContext context,
             IDicomQidoResponse response,
             DicomQidoRequest request,
-            string serviceAgent,
-            bool writeTagsAsKeywords,
-            bool formatJsonIndented,
             CancellationToken cancellationToken)
         {
             switch (response)
             {
                 case DicomQidoSuccessResponse successResponse:
                     // Emit Warning headers before writing the body (headers must be set first).
-                    EmitWarningHeaders(context, successResponse, request, serviceAgent);
+                    EmitWarningHeaders(context, successResponse, request);
 
                     var format = NegotiateResponseFormat(context);
                     switch (format)
                     {
                         case QidoResponseFormat.Json:
                             context.Response.StatusCode = StatusCodes.Status200OK;
-                            await WriteJsonResponseAsync(context, successResponse.Results,
-                                writeTagsAsKeywords, formatJsonIndented, cancellationToken);
+                            await WriteJsonResponseAsync(context, successResponse.Results, cancellationToken);
                             break;
 
                         case QidoResponseFormat.Xml:
@@ -187,30 +201,30 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         ///     (<see cref="DicomQidoSuccessResponse.IsServerMaximumResultsReached"/>).</item>
         /// </list>
         /// </summary>
-        private static void EmitWarningHeaders(HttpContext context, DicomQidoSuccessResponse successResponse,
-            DicomQidoRequest request, string serviceAgent)
+        private void EmitWarningHeaders(HttpContext context, DicomQidoSuccessResponse successResponse,
+            DicomQidoRequest request)
         {
             // PS3.18 Section 8.3.4 / RFC 7234 §5.5: fuzzy matching not supported
             if (request != null && request.Options.IsFuzzyMatching && !successResponse.IsFuzzyMatchingSupported)
             {
                 context.Response.Headers.Append("Warning",
-                    $"299 {serviceAgent} \"The fuzzymatching parameter is not supported. Only literal matching has been performed.\"");
+                    $"299 {_serviceAgent} \"The fuzzymatching parameter is not supported. Only literal matching has been performed.\"");
             }
 
             // PS3.18 Section 8.3.4.4: server maximum results exceeded
             if (successResponse.IsServerMaximumResultsReached)
             {
                 context.Response.Headers.Append("Warning",
-                    $"299 {serviceAgent} \"The number of results exceeded the maximum supported by the server. Additional results can be requested.\"");
+                    $"299 {_serviceAgent} \"The number of results exceeded the maximum supported by the server. Additional results can be requested.\"");
             }
         }
 
-        private static async Task WriteJsonResponseAsync(HttpContext context, IList<DicomDataset> results,
-            bool writeTagsAsKeywords, bool formatJsonIndented, CancellationToken cancellationToken)
+        private async Task WriteJsonResponseAsync(HttpContext context, IList<DicomDataset> results,
+            CancellationToken cancellationToken)
         {
             context.Response.ContentType = "application/dicom+json";
             await context.Response.WriteAsync(
-                DicomJson.ConvertDicomToJson(results, writeTagsAsKeywords, formatJsonIndented),
+                DicomJson.ConvertDicomToJson(results, _writeTagsAsKeywords, _formatJsonIndented),
                 cancellationToken: cancellationToken);
         }
 
