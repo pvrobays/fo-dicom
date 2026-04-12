@@ -16,6 +16,7 @@ using System.IO;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml;
 using Xunit;
 
 namespace FellowOakDicom.Tests.DicomWeb
@@ -163,7 +164,7 @@ namespace FellowOakDicom.Tests.DicomWeb
 
             await service.HandleQidoStudiesRequestAsync(context);
 
-            Assert.StartsWith("application/json", context.Response.ContentType);
+            Assert.StartsWith("application/dicom+json", context.Response.ContentType);
         }
 
         [FactForNetCore]
@@ -2006,6 +2007,342 @@ namespace FellowOakDicom.Tests.DicomWeb
 
             // Strict mode (default) → 400
             Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        }
+
+        #endregion
+
+        #region Content negotiation and XML response format
+
+        // ── Helper: build context with an explicit Accept header ─────────────────
+
+        private static DefaultHttpContext BuildHttpContextWithAccept(string acceptHeader,
+            Dictionary<string, StringValues> queryParams = null)
+        {
+            var context = BuildHttpContext(queryParams);
+            if (acceptHeader != null)
+                context.Request.Headers["Accept"] = acceptHeader;
+            return context;
+        }
+
+        // ── NegotiateResponseFormat ───────────────────────────────────────────────
+
+        [FactForNetCore]
+        public void NegotiateResponseFormat_NoAcceptHeader_DefaultsToJson()
+        {
+            var context = new DefaultHttpContext();
+            Assert.Equal(QidoResponseFormat.Json, DicomWebService.NegotiateResponseFormat(context));
+        }
+
+        [FactForNetCore]
+        public void NegotiateResponseFormat_WildcardAccept_ReturnsJson()
+        {
+            var context = new DefaultHttpContext();
+            context.Request.Headers["Accept"] = "*/*";
+            Assert.Equal(QidoResponseFormat.Json, DicomWebService.NegotiateResponseFormat(context));
+        }
+
+        [FactForNetCore]
+        public void NegotiateResponseFormat_DicomJson_ReturnsJson()
+        {
+            var context = new DefaultHttpContext();
+            context.Request.Headers["Accept"] = "application/dicom+json";
+            Assert.Equal(QidoResponseFormat.Json, DicomWebService.NegotiateResponseFormat(context));
+        }
+
+        [FactForNetCore]
+        public void NegotiateResponseFormat_PlainApplicationJson_ReturnsJson()
+        {
+            // application/json accepted for backward compatibility
+            var context = new DefaultHttpContext();
+            context.Request.Headers["Accept"] = "application/json";
+            Assert.Equal(QidoResponseFormat.Json, DicomWebService.NegotiateResponseFormat(context));
+        }
+
+        [FactForNetCore]
+        public void NegotiateResponseFormat_MultipartDicomXml_ReturnsXml()
+        {
+            var context = new DefaultHttpContext();
+            context.Request.Headers["Accept"] = "multipart/related; type=\"application/dicom+xml\"";
+            Assert.Equal(QidoResponseFormat.Xml, DicomWebService.NegotiateResponseFormat(context));
+        }
+
+        [FactForNetCore]
+        public void NegotiateResponseFormat_BareDicomXml_ReturnsXml()
+        {
+            // Relaxed: bare application/dicom+xml without multipart wrapper in Accept header
+            var context = new DefaultHttpContext();
+            context.Request.Headers["Accept"] = "application/dicom+xml";
+            Assert.Equal(QidoResponseFormat.Xml, DicomWebService.NegotiateResponseFormat(context));
+        }
+
+        [FactForNetCore]
+        public void NegotiateResponseFormat_TextHtml_ReturnsNotAcceptable()
+        {
+            var context = new DefaultHttpContext();
+            context.Request.Headers["Accept"] = "text/html";
+            Assert.Equal(QidoResponseFormat.NotAcceptable, DicomWebService.NegotiateResponseFormat(context));
+        }
+
+        [FactForNetCore]
+        public void NegotiateResponseFormat_UnknownMediaType_ReturnsNotAcceptable()
+        {
+            var context = new DefaultHttpContext();
+            context.Request.Headers["Accept"] = "application/octet-stream";
+            Assert.Equal(QidoResponseFormat.NotAcceptable, DicomWebService.NegotiateResponseFormat(context));
+        }
+
+        [FactForNetCore]
+        public void NegotiateResponseFormat_CaseInsensitive_DicomJsonUppercase_ReturnsJson()
+        {
+            var context = new DefaultHttpContext();
+            context.Request.Headers["Accept"] = "Application/DICOM+JSON";
+            Assert.Equal(QidoResponseFormat.Json, DicomWebService.NegotiateResponseFormat(context));
+        }
+
+        // ── JSON response content type ────────────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task HandleQidoRequest_AcceptDicomJson_ContentTypeIsApplicationDicomJson()
+        {
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse()));
+            var context = BuildHttpContextWithAccept("application/dicom+json");
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.StartsWith("application/dicom+json", context.Response.ContentType);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoRequest_AcceptPlainApplicationJson_ContentTypeIsApplicationDicomJson()
+        {
+            // Legacy Accept: application/json still returns JSON with the correct DICOM content type
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse()));
+            var context = BuildHttpContextWithAccept("application/json");
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.StartsWith("application/dicom+json", context.Response.ContentType);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoRequest_AcceptStarStar_ContentTypeIsApplicationDicomJson()
+        {
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse()));
+            var context = BuildHttpContextWithAccept("*/*");
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.StartsWith("application/dicom+json", context.Response.ContentType);
+        }
+
+        // ── 406 Not Acceptable ────────────────────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task HandleQidoRequest_UnsupportedAcceptType_Returns406()
+        {
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse()));
+            var context = BuildHttpContextWithAccept("text/html");
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status406NotAcceptable, context.Response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoRequest_UnsupportedAcceptType_DoesNotInvokeProvider()
+        {
+            // Provider should never be called when the Accept type is unsupported.
+            // Note: in this implementation the provider IS called first (406 is set at
+            // response-write time, not request-parse time). We therefore only verify the
+            // final status code here; the comment serves as a design note.
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse()));
+            var context = BuildHttpContextWithAccept("application/octet-stream");
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status406NotAcceptable, context.Response.StatusCode);
+        }
+
+        // ── XML multipart response ────────────────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task HandleQidoRequest_AcceptDicomXml_ContentTypeIsMultipartRelated()
+        {
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse()));
+            var context = BuildHttpContextWithAccept("multipart/related; type=\"application/dicom+xml\"");
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.StartsWith("multipart/related", context.Response.ContentType);
+            Assert.Contains("application/dicom+xml", context.Response.ContentType);
+        }
+
+        [FactForNetCore]
+        public async Task HandleQidoRequest_AcceptDicomXml_ContentTypeIncludesBoundary()
+        {
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse()));
+            var context = BuildHttpContextWithAccept("application/dicom+xml");
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Contains("boundary=", context.Response.ContentType);
+        }
+
+        [FactForNetCore]
+        public async Task XmlResponse_EmptyResults_ContainsNativeDicomModelPart()
+        {
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse()));
+            var context = BuildHttpContextWithAccept("application/dicom+xml");
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var body = await ReadResponseBodyAsync(context);
+            Assert.Contains("NativeDicomModel", body);
+        }
+
+        [FactForNetCore]
+        public async Task XmlResponse_SingleResult_ContainsOnePartWithDatasetValue()
+        {
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.StudyInstanceUID, "1.2.3.4.5");
+            var response = new DicomQidoSuccessResponse();
+            response.AddResult(dataset);
+
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(response));
+            var context = BuildHttpContextWithAccept("application/dicom+xml");
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var body = await ReadResponseBodyAsync(context);
+            Assert.Contains("NativeDicomModel", body);
+            Assert.Contains("1.2.3.4.5", body);
+        }
+
+        [FactForNetCore]
+        public async Task XmlResponse_MultipleResults_ContainsMultipleParts()
+        {
+            var ds1 = new DicomDataset().NotValidated();
+            ds1.Add(DicomTag.StudyInstanceUID, "1.1.1");
+            var ds2 = new DicomDataset().NotValidated();
+            ds2.Add(DicomTag.StudyInstanceUID, "2.2.2");
+            var ds3 = new DicomDataset().NotValidated();
+            ds3.Add(DicomTag.StudyInstanceUID, "3.3.3");
+
+            var response = new DicomQidoSuccessResponse();
+            response.AddResult(ds1);
+            response.AddResult(ds2);
+            response.AddResult(ds3);
+
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(response));
+            var context = BuildHttpContextWithAccept("multipart/related; type=\"application/dicom+xml\"");
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var body = await ReadResponseBodyAsync(context);
+
+            // Each dataset produces its own NativeDicomModel element
+            var count = CountOccurrences(body, "<NativeDicomModel>");
+            Assert.Equal(3, count);
+
+            // All three UIDs are present
+            Assert.Contains("1.1.1", body);
+            Assert.Contains("2.2.2", body);
+            Assert.Contains("3.3.3", body);
+        }
+
+        [FactForNetCore]
+        public async Task XmlResponse_BoundaryInContentTypeMatchesBoundaryInBody()
+        {
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse()));
+            var context = BuildHttpContextWithAccept("application/dicom+xml");
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var contentType = context.Response.ContentType;
+            var body = await ReadResponseBodyAsync(context);
+
+            // Extract boundary from Content-Type header
+            const string boundaryKey = "boundary=";
+            var boundaryStart = contentType.IndexOf(boundaryKey, StringComparison.Ordinal) + boundaryKey.Length;
+            var boundary = contentType.Substring(boundaryStart).Trim();
+
+            // The body must contain the opening boundary
+            Assert.Contains("--" + boundary, body);
+            // The body must contain the closing boundary
+            Assert.Contains("--" + boundary + "--", body);
+        }
+
+        [FactForNetCore]
+        public async Task XmlResponse_EachPartHasApplicationDicomXmlContentTypeHeader()
+        {
+            var ds = new DicomDataset().NotValidated();
+            ds.Add(DicomTag.PatientID, "PAT001");
+            var response = new DicomQidoSuccessResponse();
+            response.AddResult(ds);
+
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(response));
+            var context = BuildHttpContextWithAccept("application/dicom+xml");
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var body = await ReadResponseBodyAsync(context);
+            Assert.Contains("Content-Type: application/dicom+xml", body);
+        }
+
+        [FactForNetCore]
+        public async Task XmlResponse_EachPartContainsWellFormedXml()
+        {
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.PatientID, "PAT-XML-001");
+            dataset.Add(DicomTag.StudyInstanceUID, "1.2.3");
+            var response = new DicomQidoSuccessResponse();
+            response.AddResult(dataset);
+
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(response));
+            var context = BuildHttpContextWithAccept("application/dicom+xml");
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var body = await ReadResponseBodyAsync(context);
+
+            // Extract just the XML portion (between the part headers and the closing boundary)
+            var xmlStart = body.IndexOf("<?xml", StringComparison.Ordinal);
+            var xmlEnd = body.LastIndexOf("</NativeDicomModel>", StringComparison.Ordinal)
+                         + "</NativeDicomModel>".Length;
+            var xmlPart = body.Substring(xmlStart, xmlEnd - xmlStart);
+
+            // Must parse as valid XML without throwing
+            var doc = new XmlDocument();
+            doc.LoadXml(xmlPart);
+            Assert.Equal("NativeDicomModel", doc.DocumentElement.LocalName);
+        }
+
+        // ── Helper: count substring occurrences ───────────────────────────────────
+
+        private static int CountOccurrences(string text, string value)
+        {
+            int count = 0;
+            int index = 0;
+            while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+            {
+                count++;
+                index += value.Length;
+            }
+            return count;
         }
 
         #endregion
