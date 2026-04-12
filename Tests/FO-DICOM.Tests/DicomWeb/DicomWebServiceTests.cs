@@ -2034,7 +2034,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         public void NegotiateResponseFormat_NoAcceptHeader_DefaultsToJson()
         {
             var context = new DefaultHttpContext();
-            Assert.Equal(QidoResponseFormat.Json, DicomWebService.NegotiateResponseFormat(context));
+            Assert.Equal(QidoResponseFormat.Json, QidoResponseWriter.NegotiateResponseFormat(context));
         }
 
         [FactForNetCore]
@@ -2042,7 +2042,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         {
             var context = new DefaultHttpContext();
             context.Request.Headers["Accept"] = "*/*";
-            Assert.Equal(QidoResponseFormat.Json, DicomWebService.NegotiateResponseFormat(context));
+            Assert.Equal(QidoResponseFormat.Json, QidoResponseWriter.NegotiateResponseFormat(context));
         }
 
         [FactForNetCore]
@@ -2050,7 +2050,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         {
             var context = new DefaultHttpContext();
             context.Request.Headers["Accept"] = "application/dicom+json";
-            Assert.Equal(QidoResponseFormat.Json, DicomWebService.NegotiateResponseFormat(context));
+            Assert.Equal(QidoResponseFormat.Json, QidoResponseWriter.NegotiateResponseFormat(context));
         }
 
         [FactForNetCore]
@@ -2059,7 +2059,7 @@ namespace FellowOakDicom.Tests.DicomWeb
             // application/json accepted for backward compatibility
             var context = new DefaultHttpContext();
             context.Request.Headers["Accept"] = "application/json";
-            Assert.Equal(QidoResponseFormat.Json, DicomWebService.NegotiateResponseFormat(context));
+            Assert.Equal(QidoResponseFormat.Json, QidoResponseWriter.NegotiateResponseFormat(context));
         }
 
         [FactForNetCore]
@@ -2067,7 +2067,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         {
             var context = new DefaultHttpContext();
             context.Request.Headers["Accept"] = "multipart/related; type=\"application/dicom+xml\"";
-            Assert.Equal(QidoResponseFormat.Xml, DicomWebService.NegotiateResponseFormat(context));
+            Assert.Equal(QidoResponseFormat.Xml, QidoResponseWriter.NegotiateResponseFormat(context));
         }
 
         [FactForNetCore]
@@ -2076,7 +2076,7 @@ namespace FellowOakDicom.Tests.DicomWeb
             // Relaxed: bare application/dicom+xml without multipart wrapper in Accept header
             var context = new DefaultHttpContext();
             context.Request.Headers["Accept"] = "application/dicom+xml";
-            Assert.Equal(QidoResponseFormat.Xml, DicomWebService.NegotiateResponseFormat(context));
+            Assert.Equal(QidoResponseFormat.Xml, QidoResponseWriter.NegotiateResponseFormat(context));
         }
 
         [FactForNetCore]
@@ -2084,7 +2084,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         {
             var context = new DefaultHttpContext();
             context.Request.Headers["Accept"] = "text/html";
-            Assert.Equal(QidoResponseFormat.NotAcceptable, DicomWebService.NegotiateResponseFormat(context));
+            Assert.Equal(QidoResponseFormat.NotAcceptable, QidoResponseWriter.NegotiateResponseFormat(context));
         }
 
         [FactForNetCore]
@@ -2092,7 +2092,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         {
             var context = new DefaultHttpContext();
             context.Request.Headers["Accept"] = "application/octet-stream";
-            Assert.Equal(QidoResponseFormat.NotAcceptable, DicomWebService.NegotiateResponseFormat(context));
+            Assert.Equal(QidoResponseFormat.NotAcceptable, QidoResponseWriter.NegotiateResponseFormat(context));
         }
 
         [FactForNetCore]
@@ -2100,7 +2100,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         {
             var context = new DefaultHttpContext();
             context.Request.Headers["Accept"] = "Application/DICOM+JSON";
-            Assert.Equal(QidoResponseFormat.Json, DicomWebService.NegotiateResponseFormat(context));
+            Assert.Equal(QidoResponseFormat.Json, QidoResponseWriter.NegotiateResponseFormat(context));
         }
 
         // ── JSON response content type ────────────────────────────────────────────
