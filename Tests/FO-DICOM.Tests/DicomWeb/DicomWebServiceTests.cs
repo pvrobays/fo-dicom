@@ -97,21 +97,25 @@ namespace FellowOakDicom.Tests.DicomWeb
                 Func<DicomQidoRequest, CancellationToken, Task<IDicomQidoResponse>> handler,
                 bool writeTagsAsKeywords = false,
                 bool formatJsonIndented = false,
-                bool strictQueryParameterParsing = true)
+                bool strictQueryParameterParsing = true,
+                string serviceName = null)
             {
                 _handler = handler;
                 WriteTagsAsKeywordsOverride = writeTagsAsKeywords;
                 FormatJsonIndentedOverride = formatJsonIndented;
                 StrictQueryParameterParsingOverride = strictQueryParameterParsing;
+                ServiceNameOverride = serviceName;
             }
 
             private bool WriteTagsAsKeywordsOverride { get; }
             private bool FormatJsonIndentedOverride { get; }
             private bool StrictQueryParameterParsingOverride { get; }
+            private string ServiceNameOverride { get; }
 
             protected override bool WriteTagsAsKeywords => WriteTagsAsKeywordsOverride;
             protected override bool FormatJsonIndented => FormatJsonIndentedOverride;
             protected override bool StrictQueryParameterParsing => StrictQueryParameterParsingOverride;
+            protected override string ServiceName => ServiceNameOverride;
 
             public Task<IDicomQidoResponse> OnQidoRequestAsync(DicomQidoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
                 => _handler(request, cancellationToken);
@@ -2343,6 +2347,183 @@ namespace FellowOakDicom.Tests.DicomWeb
                 index += value.Length;
             }
             return count;
+        }
+
+        #endregion
+
+        #region Warning response headers (PS3.18 Section 8.3.4)
+
+        // ── Fuzzy matching Warning ────────────────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task WarningHeader_FuzzyMatchingRequestedAndNotSupported_EmitsWarning()
+        {
+            // Provider returns IsFuzzyMatchingSupported = false (the default)
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse { IsFuzzyMatchingSupported = false }));
+
+            // Client requests fuzzy matching via query string
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["fuzzymatching"] = "true"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.True(context.Response.Headers.ContainsKey("Warning"),
+                "Warning header should be present when fuzzy matching was requested but is not supported");
+            Assert.Contains("fuzzymatching parameter is not supported",
+                context.Response.Headers["Warning"].ToString());
+        }
+
+        [FactForNetCore]
+        public async Task WarningHeader_FuzzyMatchingNotRequested_NoWarning()
+        {
+            // Client does NOT request fuzzy matching (default)
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse { IsFuzzyMatchingSupported = false }));
+            var context = BuildHttpContext();
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.False(context.Response.Headers.ContainsKey("Warning"),
+                "No Warning header should be emitted when fuzzy matching was not requested");
+        }
+
+        [FactForNetCore]
+        public async Task WarningHeader_FuzzyMatchingRequestedAndSupported_NoWarning()
+        {
+            // Provider explicitly supports fuzzy matching
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse { IsFuzzyMatchingSupported = true }));
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["fuzzymatching"] = "true"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.False(context.Response.Headers.ContainsKey("Warning"),
+                "No Warning header should be emitted when fuzzy matching is supported");
+        }
+
+        // ── Maximum results Warning ───────────────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task WarningHeader_ServerMaximumResultsReached_EmitsWarning()
+        {
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse { IsServerMaximumResultsReached = true }));
+            var context = BuildHttpContext();
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.True(context.Response.Headers.ContainsKey("Warning"),
+                "Warning header should be present when server maximum results were reached");
+            Assert.Contains("number of results exceeded",
+                context.Response.Headers["Warning"].ToString());
+        }
+
+        [FactForNetCore]
+        public async Task WarningHeader_ServerMaximumResultsNotReached_NoWarning()
+        {
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse { IsServerMaximumResultsReached = false }));
+            var context = BuildHttpContext();
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.False(context.Response.Headers.ContainsKey("Warning"),
+                "No Warning header should be emitted when server maximum results were not reached");
+        }
+
+        // ── Both warnings together ────────────────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task WarningHeader_BothConditionsTrue_EmitsBothWarnings()
+        {
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse
+                {
+                    IsFuzzyMatchingSupported = false,
+                    IsServerMaximumResultsReached = true
+                }));
+            var context = BuildHttpContext(new Dictionary<string, StringValues>
+            {
+                ["fuzzymatching"] = "true"
+            });
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var warningValues = context.Response.Headers["Warning"].ToString();
+            Assert.Contains("fuzzymatching parameter is not supported", warningValues);
+            Assert.Contains("number of results exceeded", warningValues);
+        }
+
+        // ── Warning header format ─────────────────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task WarningHeader_Contains299WarnCode()
+        {
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse { IsServerMaximumResultsReached = true }));
+            var context = BuildHttpContext();
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var warningValue = context.Response.Headers["Warning"].ToString();
+            Assert.StartsWith("299 ", warningValue);
+        }
+
+        [FactForNetCore]
+        public async Task WarningHeader_UsesRequestHostAsWarnAgentByDefault()
+        {
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse { IsServerMaximumResultsReached = true }));
+            var context = BuildHttpContext();
+            // DefaultHttpContext has no Host by default; set one explicitly
+            context.Request.Host = new HostString("pacs.example.com", 8080);
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var warningValue = context.Response.Headers["Warning"].ToString();
+            Assert.Contains("pacs.example.com:8080", warningValue);
+        }
+
+        [FactForNetCore]
+        public async Task WarningHeader_CustomServiceName_UsesOverriddenValue()
+        {
+            var service = new ConfigurableDicomWebService(
+                (req, ct) => Task.FromResult<IDicomQidoResponse>(
+                    new DicomQidoSuccessResponse { IsServerMaximumResultsReached = true }),
+                serviceName: "my-custom-pacs");
+            var context = BuildHttpContext();
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            var warningValue = context.Response.Headers["Warning"].ToString();
+            Assert.Contains("my-custom-pacs", warningValue);
+        }
+
+        // ── No Warning on failure responses ──────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task WarningHeader_FailureResponse_NoWarningEmitted()
+        {
+            // Bad request should not carry any Warning headers
+            var service = new TestDicomWebService((req, ct) =>
+                Task.FromResult<IDicomQidoResponse>(new DicomQidoBadRequestResponse("test error")));
+            var context = BuildHttpContext();
+
+            await service.HandleQidoStudiesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+            Assert.False(context.Response.Headers.ContainsKey("Warning"));
         }
 
         #endregion

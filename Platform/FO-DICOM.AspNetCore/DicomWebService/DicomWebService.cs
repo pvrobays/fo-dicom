@@ -106,33 +106,47 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// </summary>
         protected virtual bool StrictQueryParameterParsing => true;
 
+        /// <summary>
+        /// The warn-agent identifier included in HTTP <c>Warning</c> response headers
+        /// (RFC 7234 Section 5.5, PS3.18 Section 8.3.4).
+        /// <para>
+        /// When <c>null</c> (default), the value of the <c>Host</c> request header is used
+        /// (e.g. <c>"pacs.example.com:8080"</c>).  Override to supply a fixed service name
+        /// (e.g. <c>"my-pacs.example.com"</c>) that is independent of the Host header.
+        /// </para>
+        /// </summary>
+        protected virtual string ServiceName => null;
+
         public async Task HandleQidoStudiesRequestAsync(HttpContext context)
         {
             var cancellationToken = context.RequestAborted;
-            var response = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Study, context, cancellationToken);
-            await ExecuteQidoResponseOnHttpContext(context, response, cancellationToken);
+            var (response, request) = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Study, context, cancellationToken);
+            await ExecuteQidoResponseOnHttpContext(context, response, request, cancellationToken);
         }
 
         public async Task HandleQidoSeriesRequestAsync(HttpContext context)
         {
             var cancellationToken = context.RequestAborted;
-            var response = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Series, context, cancellationToken);
-            await ExecuteQidoResponseOnHttpContext(context, response, cancellationToken);
+            var (response, request) = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Series, context, cancellationToken);
+            await ExecuteQidoResponseOnHttpContext(context, response, request, cancellationToken);
         }
 
         public async Task HandleQidoInstancesRequestAsync(HttpContext context)
         {
             var cancellationToken = context.RequestAborted;
-            var response = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Image, context, cancellationToken);
-            await ExecuteQidoResponseOnHttpContext(context, response, cancellationToken);
+            var (response, request) = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Image, context, cancellationToken);
+            await ExecuteQidoResponseOnHttpContext(context, response, request, cancellationToken);
         }
 
         private async Task ExecuteQidoResponseOnHttpContext(HttpContext context, IDicomQidoResponse response,
-            CancellationToken cancellationToken)
+            DicomQidoRequest request, CancellationToken cancellationToken)
         {
             switch (response)
             {
                 case DicomQidoSuccessResponse successResponse:
+                    // Emit Warning headers before writing the body (headers must be set first).
+                    EmitWarningHeaders(context, successResponse, request);
+
                     var format = NegotiateResponseFormat(context);
                     switch (format)
                     {
@@ -191,6 +205,38 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
                 default:
                     throw new ArgumentOutOfRangeException(nameof(response));
+            }
+        }
+
+        /// <summary>
+        /// Appends PS3.18 Section 8.3.4 <c>Warning: 299</c> headers to the response when applicable.
+        /// <list type="bullet">
+        ///   <item>Fuzzy-matching warning — emitted when the client requested fuzzy matching
+        ///     (<see cref="DicomQidoRequestOptions.IsFuzzyMatching"/>) but the provider does not
+        ///     support it (<see cref="DicomQidoSuccessResponse.IsFuzzyMatchingSupported"/> is
+        ///     <c>false</c>).</item>
+        ///   <item>Maximum-results warning — emitted when the provider indicates that additional
+        ///     matching results exist beyond what was returned
+        ///     (<see cref="DicomQidoSuccessResponse.IsServerMaximumResultsReached"/>).</item>
+        /// </list>
+        /// </summary>
+        private void EmitWarningHeaders(HttpContext context, DicomQidoSuccessResponse successResponse,
+            DicomQidoRequest request)
+        {
+            var serviceAgent = ServiceName ?? context.Request.Host.ToString();
+
+            // PS3.18 Section 8.3.4 / RFC 7234 §5.5: fuzzy matching not supported
+            if (request != null && request.Options.IsFuzzyMatching && !successResponse.IsFuzzyMatchingSupported)
+            {
+                context.Response.Headers.Append("Warning",
+                    $"299 {serviceAgent} \"The fuzzymatching parameter is not supported. Only literal matching has been performed.\"");
+            }
+
+            // PS3.18 Section 8.3.4.4: server maximum results exceeded
+            if (successResponse.IsServerMaximumResultsReached)
+            {
+                context.Response.Headers.Append("Warning",
+                    $"299 {serviceAgent} \"The number of results exceeded the maximum supported by the server. Additional results can be requested.\"");
             }
         }
 
@@ -280,13 +326,23 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             await context.Response.WriteAsync(sb.ToString(), cancellationToken: cancellationToken);
         }
 
-        private async Task<IDicomQidoResponse> InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel level,
-            HttpContext context, CancellationToken cancellationToken)
+        /// <summary>
+        /// Parses the incoming request into a <see cref="DicomQidoRequest"/>, injects route-scoped
+        /// UIDs, calls the provider, and returns both the provider's response and the parsed request
+        /// (so that the caller can inspect request options such as
+        /// <see cref="DicomQidoRequestOptions.IsFuzzyMatching"/> when building Warning headers).
+        /// <para>
+        /// The returned <see cref="DicomQidoRequest"/> is <c>null</c> when request parsing fails
+        /// (the response will be a <see cref="DicomQidoBadRequestResponse"/> in that case).
+        /// </para>
+        /// </summary>
+        private async Task<(IDicomQidoResponse response, DicomQidoRequest request)> InnerHandleQidoRequestAsync(
+            DicomQueryRetrieveLevel level, HttpContext context, CancellationToken cancellationToken)
         {
             if (!(this is IDicomQidoProvider thisAsQidoProvider))
             {
                 _logger.LogDebug("QIDO {Level} request received but no IDicomQidoProvider is implemented — returning 501", level);
-                return new DicomQidoNotImplementedResponse();
+                return (new DicomQidoNotImplementedResponse(), null);
             }
 
             DicomQidoRequest request;
@@ -312,18 +368,19 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             {
                 _logger.LogWarning(e, "QIDO {Level} request rejected: failed to parse query string — {Reason}",
                     level, e.Message);
-                return new DicomQidoBadRequestResponse(e.Message);
+                return (new DicomQidoBadRequestResponse(e.Message), null);
             }
 
             try
             {
-                return await thisAsQidoProvider.OnQidoRequestAsync(request, context, cancellationToken);
+                var providerResponse = await thisAsQidoProvider.OnQidoRequestAsync(request, context, cancellationToken);
+                return (providerResponse, request);
             }
             catch (Exception e)
             {
                 _logger.LogError(e, "QIDO {Level} request failed: unhandled exception in OnQidoRequestAsync",
                     level);
-                return new DicomQidoUnavailableResponse(e.Message);
+                return (new DicomQidoUnavailableResponse(e.Message), request);
             }
         }
     }
