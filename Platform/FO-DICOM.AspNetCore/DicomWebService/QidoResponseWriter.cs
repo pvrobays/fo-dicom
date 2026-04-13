@@ -6,7 +6,7 @@ using FellowOakDicom.Serialization;
 using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
-using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -227,47 +227,66 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             }
         }
 
+        /// <summary>
+        /// Serialises <paramref name="results"/> as a JSON array directly into the response body
+        /// using <see cref="Utf8JsonWriter"/>, avoiding an intermediate string allocation.
+        /// Each dataset is flushed immediately so the client receives data as it is produced.
+        /// </summary>
         private async Task WriteJsonResponseAsync(HttpContext context, IList<DicomDataset> results,
             CancellationToken cancellationToken)
         {
             context.Response.ContentType = "application/dicom+json";
-            await context.Response.WriteAsync(
-                DicomJson.ConvertDicomToJson(results, _writeTagsAsKeywords, _formatJsonIndented),
-                cancellationToken: cancellationToken);
+
+            var converter = new DicomJsonConverter(writeTagsAsKeywords: _writeTagsAsKeywords);
+            var options = new JsonSerializerOptions { WriteIndented = _formatJsonIndented };
+            options.Converters.Add(converter);
+
+            var writerOptions = new JsonWriterOptions { Indented = _formatJsonIndented };
+            await using var writer = new Utf8JsonWriter(context.Response.Body, writerOptions);
+
+            writer.WriteStartArray();
+            foreach (var ds in results)
+            {
+                converter.Write(writer, ds, options);
+                await writer.FlushAsync(cancellationToken);
+            }
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
         }
 
+        /// <summary>
+        /// Writes each dataset as an individual <c>application/dicom+xml</c> multipart part
+        /// directly into the response body, flushing after each part instead of accumulating
+        /// a full <c>StringBuilder</c> in memory.
+        /// </summary>
         private static async Task WriteXmlMultipartResponseAsync(HttpContext context, IList<DicomDataset> results,
             CancellationToken cancellationToken)
         {
             var boundary = Guid.NewGuid().ToString("N");
             context.Response.ContentType = $"multipart/related; type=\"application/dicom+xml\"; boundary={boundary}";
 
-            var sb = new StringBuilder();
-
             if (results.Count == 0)
             {
                 // PS3.18 Section 8.3.4.4.1: empty result is encoded as a single part
                 // with an empty NativeDicomModel element.
-                sb.Append("--").AppendLine(boundary);
-                sb.AppendLine("Content-Type: application/dicom+xml");
-                sb.AppendLine();
-                sb.AppendLine(DicomXML.ConvertDicomToXML(new DicomDataset()));
+                await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
+                await context.Response.WriteAsync("Content-Type: application/dicom+xml\r\n\r\n", cancellationToken);
+                await context.Response.WriteAsync(DicomXML.ConvertDicomToXML(new DicomDataset()), cancellationToken);
+                await context.Response.WriteAsync("\r\n", cancellationToken);
             }
             else
             {
                 foreach (var dataset in results)
                 {
-                    sb.Append("--").AppendLine(boundary);
-                    sb.AppendLine("Content-Type: application/dicom+xml");
-                    sb.AppendLine();
-                    sb.AppendLine(DicomXML.ConvertDicomToXML(dataset));
+                    await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
+                    await context.Response.WriteAsync("Content-Type: application/dicom+xml\r\n\r\n", cancellationToken);
+                    await context.Response.WriteAsync(DicomXML.ConvertDicomToXML(dataset), cancellationToken);
+                    await context.Response.WriteAsync("\r\n", cancellationToken);
                 }
             }
 
             // Closing boundary
-            sb.Append("--").Append(boundary).AppendLine("--");
-
-            await context.Response.WriteAsync(sb.ToString(), cancellationToken: cancellationToken);
+            await context.Response.WriteAsync($"--{boundary}--\r\n", cancellationToken);
         }
     }
 }

@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -92,12 +92,26 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     break;
 
                 case DicomWadoAsyncMetadataResponse asyncMetadataResponse:
-                    var datasets = new List<DicomDataset>();
-                    await foreach (var ds in asyncMetadataResponse.Results.WithCancellation(cancellationToken))
+                    var format = NegotiateMetadataFormat(context);
+                    switch (format)
                     {
-                        datasets.Add(ds);
+                        case QidoResponseFormat.Json:
+                            context.Response.StatusCode = StatusCodes.Status200OK;
+                            await WriteJsonStreamingAsync(context, asyncMetadataResponse.Results, cancellationToken);
+                            break;
+
+                        case QidoResponseFormat.Xml:
+                            context.Response.StatusCode = StatusCodes.Status200OK;
+                            await WriteXmlMultipartStreamingAsync(context, asyncMetadataResponse.Results, cancellationToken);
+                            break;
+
+                        case QidoResponseFormat.NotAcceptable:
+                            context.Response.StatusCode = StatusCodes.Status406NotAcceptable;
+                            break;
+
+                        default:
+                            throw new ArgumentOutOfRangeException(nameof(format));
                     }
-                    await WriteMetadataAsync(context, datasets, cancellationToken);
                     break;
 
                 default:
@@ -192,14 +206,12 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 case QidoResponseFormat.Json:
                     context.Response.StatusCode = StatusCodes.Status200OK;
                     context.Response.ContentType = "application/dicom+json";
-                    await context.Response.WriteAsync(
-                        DicomJson.ConvertDicomToJson(datasets, _writeTagsAsKeywords, _formatJsonIndented),
-                        cancellationToken: cancellationToken);
+                    await WriteJsonAsync(context, datasets, cancellationToken);
                     break;
 
                 case QidoResponseFormat.Xml:
                     context.Response.StatusCode = StatusCodes.Status200OK;
-                    await WriteXmlMultipartMetadataAsync(context, datasets, cancellationToken);
+                    await WriteXmlMultipartAsync(context, datasets, cancellationToken);
                     break;
 
                 case QidoResponseFormat.NotAcceptable:
@@ -211,37 +223,133 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             }
         }
 
-        private static async Task WriteXmlMultipartMetadataAsync(
+        /// <summary>
+        /// Serialises <paramref name="datasets"/> as a JSON array directly into the response body
+        /// using <see cref="Utf8JsonWriter"/>, avoiding an intermediate string allocation.
+        /// Each dataset is flushed immediately so the client receives data as it is produced.
+        /// </summary>
+        private async Task WriteJsonAsync(
             HttpContext context,
-            IList<DicomDataset> datasets,
+            IEnumerable<DicomDataset> datasets,
+            CancellationToken cancellationToken)
+        {
+            var converter = new DicomJsonConverter(writeTagsAsKeywords: _writeTagsAsKeywords);
+            var options = new JsonSerializerOptions { WriteIndented = _formatJsonIndented };
+            options.Converters.Add(converter);
+
+            var writerOptions = new JsonWriterOptions { Indented = _formatJsonIndented };
+            await using var writer = new Utf8JsonWriter(context.Response.Body, writerOptions);
+
+            writer.WriteStartArray();
+            foreach (var ds in datasets)
+            {
+                converter.Write(writer, ds, options);
+                await writer.FlushAsync(cancellationToken);
+            }
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// Serialises <paramref name="datasets"/> as a JSON array directly into the response body
+        /// using <see cref="Utf8JsonWriter"/>, flushing after each dataset so the client receives
+        /// data as it is produced from the async enumerable.
+        /// </summary>
+        private async Task WriteJsonStreamingAsync(
+            HttpContext context,
+            IAsyncEnumerable<DicomDataset> datasets,
+            CancellationToken cancellationToken)
+        {
+            context.Response.ContentType = "application/dicom+json";
+
+            var converter = new DicomJsonConverter(writeTagsAsKeywords: _writeTagsAsKeywords);
+            var options = new JsonSerializerOptions { WriteIndented = _formatJsonIndented };
+            options.Converters.Add(converter);
+
+            var writerOptions = new JsonWriterOptions { Indented = _formatJsonIndented };
+            await using var writer = new Utf8JsonWriter(context.Response.Body, writerOptions);
+
+            writer.WriteStartArray();
+            await foreach (var ds in datasets.WithCancellation(cancellationToken))
+            {
+                converter.Write(writer, ds, options);
+                await writer.FlushAsync(cancellationToken);
+            }
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// Writes each dataset as an individual <c>application/dicom+xml</c> multipart part
+        /// directly into the response body, flushing after each part.
+        /// </summary>
+        private static async Task WriteXmlMultipartAsync(
+            HttpContext context,
+            IEnumerable<DicomDataset> datasets,
             CancellationToken cancellationToken)
         {
             var boundary = Guid.NewGuid().ToString("N");
             context.Response.ContentType =
                 $"multipart/related; type=\"application/dicom+xml\"; boundary={boundary}";
 
-            var sb = new StringBuilder();
-
-            if (datasets.Count == 0)
+            bool any = false;
+            foreach (var ds in datasets)
             {
-                sb.Append("--").AppendLine(boundary);
-                sb.AppendLine("Content-Type: application/dicom+xml");
-                sb.AppendLine();
-                sb.AppendLine(DicomXML.ConvertDicomToXML(new DicomDataset()));
-            }
-            else
-            {
-                foreach (var dataset in datasets)
-                {
-                    sb.Append("--").AppendLine(boundary);
-                    sb.AppendLine("Content-Type: application/dicom+xml");
-                    sb.AppendLine();
-                    sb.AppendLine(DicomXML.ConvertDicomToXML(dataset));
-                }
+                any = true;
+                await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
+                await context.Response.WriteAsync("Content-Type: application/dicom+xml\r\n\r\n", cancellationToken);
+                await context.Response.WriteAsync(DicomXML.ConvertDicomToXML(ds), cancellationToken);
+                await context.Response.WriteAsync("\r\n", cancellationToken);
             }
 
-            sb.Append("--").Append(boundary).AppendLine("--");
-            await context.Response.WriteAsync(sb.ToString(), cancellationToken: cancellationToken);
+            if (!any)
+            {
+                // PS3.18 Section 10.4.1.1.2: empty result encoded as a single part
+                // with an empty NativeDicomModel element.
+                await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
+                await context.Response.WriteAsync("Content-Type: application/dicom+xml\r\n\r\n", cancellationToken);
+                await context.Response.WriteAsync(DicomXML.ConvertDicomToXML(new DicomDataset()), cancellationToken);
+                await context.Response.WriteAsync("\r\n", cancellationToken);
+            }
+
+            await context.Response.WriteAsync($"--{boundary}--\r\n", cancellationToken);
+        }
+
+        /// <summary>
+        /// Writes each dataset from an async enumerable as an individual
+        /// <c>application/dicom+xml</c> multipart part directly into the response body,
+        /// flushing after each part so the client receives data as it is produced.
+        /// </summary>
+        private static async Task WriteXmlMultipartStreamingAsync(
+            HttpContext context,
+            IAsyncEnumerable<DicomDataset> datasets,
+            CancellationToken cancellationToken)
+        {
+            var boundary = Guid.NewGuid().ToString("N");
+            context.Response.ContentType =
+                $"multipart/related; type=\"application/dicom+xml\"; boundary={boundary}";
+
+            bool any = false;
+            await foreach (var ds in datasets.WithCancellation(cancellationToken))
+            {
+                any = true;
+                await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
+                await context.Response.WriteAsync("Content-Type: application/dicom+xml\r\n\r\n", cancellationToken);
+                await context.Response.WriteAsync(DicomXML.ConvertDicomToXML(ds), cancellationToken);
+                await context.Response.WriteAsync("\r\n", cancellationToken);
+            }
+
+            if (!any)
+            {
+                // PS3.18 Section 10.4.1.1.2: empty result encoded as a single part
+                // with an empty NativeDicomModel element.
+                await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
+                await context.Response.WriteAsync("Content-Type: application/dicom+xml\r\n\r\n", cancellationToken);
+                await context.Response.WriteAsync(DicomXML.ConvertDicomToXML(new DicomDataset()), cancellationToken);
+                await context.Response.WriteAsync("\r\n", cancellationToken);
+            }
+
+            await context.Response.WriteAsync($"--{boundary}--\r\n", cancellationToken);
         }
 
         // ── Failure response mapping ──────────────────────────────────────────
