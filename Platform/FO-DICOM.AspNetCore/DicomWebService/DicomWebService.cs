@@ -99,19 +99,37 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// <summary>
         /// Returns the lazily-initialised <see cref="QidoResponseWriter"/> for this service
         /// instance. The writer is created once from the virtual configuration properties and
-        /// reused across all requests.
+        /// reused across all requests. Uses <see cref="Interlocked.CompareExchange{T}"/> for
+        /// thread-safe initialisation without locking.
         /// </summary>
-        private QidoResponseWriter ResponseWriter =>
-            _responseWriter ?? (_responseWriter = new QidoResponseWriter(ServiceName, WriteTagsAsKeywords, FormatJsonIndented));
+        private QidoResponseWriter ResponseWriter
+        {
+            get
+            {
+                var existing = _responseWriter;
+                if (existing != null) return existing;
+                var created = new QidoResponseWriter(ServiceName, WriteTagsAsKeywords, FormatJsonIndented);
+                return Interlocked.CompareExchange(ref _responseWriter, created, null) ?? created;
+            }
+        }
 
         /// <summary>
         /// Returns the lazily-initialised <see cref="WadoResponseWriter"/> for this service
         /// instance. The writer is created once from the virtual configuration properties and
-        /// reused across all requests.
+        /// reused across all requests. Uses <see cref="Interlocked.CompareExchange{T}"/> for
+        /// thread-safe initialisation without locking.
         /// </summary>
-        private WadoResponseWriter WadoWriter =>
-            _wadoResponseWriter ?? (_wadoResponseWriter = new WadoResponseWriter(
-                ServiceName, WriteTagsAsKeywords, FormatJsonIndented, ContentLocationMode));
+        private WadoResponseWriter WadoWriter
+        {
+            get
+            {
+                var existing = _wadoResponseWriter;
+                if (existing != null) return existing;
+                var created = new WadoResponseWriter(
+                    ServiceName, WriteTagsAsKeywords, FormatJsonIndented, ContentLocationMode);
+                return Interlocked.CompareExchange(ref _wadoResponseWriter, created, null) ?? created;
+            }
+        }
 
         public async Task HandleQidoStudiesRequestAsync(HttpContext context)
         {
