@@ -1,6 +1,7 @@
 // Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 
+using FellowOakDicom.IO.Buffer;
 using System.Collections.Generic;
 using System.IO;
 
@@ -24,6 +25,13 @@ namespace FellowOakDicom.DicomWeb
     /// Implemented by metadata response types and all failure responses.
     /// </summary>
     public interface IDicomWadoMetadataResponse : IDicomWadoResponse { }
+
+    /// <summary>
+    /// Marker interface for responses to WADO-RS frame retrieval requests
+    /// (PS3.18 Section 10.4.1.1.4).
+    /// Implemented by frame response types and all failure responses.
+    /// </summary>
+    public interface IDicomWadoFrameResponse : IDicomWadoResponse { }
 
     // ── Instance responses ────────────────────────────────────────────────────
 
@@ -198,6 +206,76 @@ namespace FellowOakDicom.DicomWeb
         public IAsyncEnumerable<DicomDataset> Results { get; }
 
         public DicomWadoAsyncMetadataResponse(IAsyncEnumerable<DicomDataset> results)
+        {
+            Results = results;
+        }
+    }
+
+    // ── Frame responses ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The pixel data for a single DICOM frame within a WADO-RS frame retrieval response
+    /// (PS3.18 Section 10.4.1.1.4).
+    /// <para>
+    /// The <see cref="MediaType"/> is the MIME type that applies to <see cref="Data"/> —
+    /// e.g. <c>application/octet-stream</c> for uncompressed pixels, <c>image/jpeg</c> for
+    /// JPEG-compressed, <c>image/jp2</c> for JPEG 2000, etc.
+    /// </para>
+    /// </summary>
+    public class DicomWadoFrameData
+    {
+        /// <summary>
+        /// The raw pixel bytes for this frame.
+        /// For uncompressed syntaxes this is the raw raster sample data; for compressed
+        /// syntaxes this is the native bitstream (JPEG, JPEG 2000, etc.) as returned by
+        /// <see cref="FellowOakDicom.Imaging.DicomPixelData.GetFrame(int)"/>.
+        /// </summary>
+        public IByteBuffer Data { get; }
+
+        /// <summary>
+        /// The MIME media type for <see cref="Data"/>, used as the <c>Content-Type</c>
+        /// of the multipart part that contains this frame. Examples:
+        /// <list type="bullet">
+        ///   <item><c>application/octet-stream</c> — uncompressed raw pixels</item>
+        ///   <item><c>image/jpeg</c> — JPEG (any process)</item>
+        ///   <item><c>image/jp2</c> — JPEG 2000</item>
+        ///   <item><c>image/x-jls</c> — JPEG-LS</item>
+        ///   <item><c>image/jphc</c> — High-Throughput JPEG 2000 (HTJ2K)</item>
+        /// </list>
+        /// </summary>
+        public string MediaType { get; }
+
+        /// <summary>
+        /// The 1-based frame number within the instance (as specified in the request URL).
+        /// </summary>
+        public int FrameNumber { get; }
+
+        /// <summary>
+        /// Creates a frame data object.
+        /// </summary>
+        /// <param name="data">Raw pixel bytes for the frame.</param>
+        /// <param name="mediaType">MIME type for the frame bytes (e.g. <c>"image/jpeg"</c>).</param>
+        /// <param name="frameNumber">1-based frame number.</param>
+        public DicomWadoFrameData(IByteBuffer data, string mediaType, int frameNumber)
+        {
+            Data = data;
+            MediaType = mediaType;
+            FrameNumber = frameNumber;
+        }
+    }
+
+    /// <summary>
+    /// A WADO-RS frame retrieval response carrying a list of per-frame pixel data objects.
+    /// The framework serializes each frame as a part in a
+    /// <c>multipart/related; type="&lt;mediaType&gt;"</c> response body
+    /// (PS3.18 Section 10.4.1.1.4).
+    /// </summary>
+    public class DicomWadoFramesResponse : IDicomWadoFrameResponse
+    {
+        /// <summary>The frame data to return to the client (in request order).</summary>
+        public IList<DicomWadoFrameData> Results { get; }
+
+        public DicomWadoFramesResponse(IList<DicomWadoFrameData> results)
         {
             Results = results;
         }
