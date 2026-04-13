@@ -69,5 +69,19 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// </list>
         /// </summary>
         Task HandleWadoMetadataRequestAsync(HttpContext context);
+
+        // ── WADO-RS (Retrieve Frames) ──────────────────────────────────────────
+
+        /// <summary>
+        /// Handles a WADO-RS Frame Resources request (PS3.18 Section 10.4.1.1.4).
+        /// Returns raw pixel data for one or more frames of a single instance as a
+        /// <c>multipart/related</c> response with per-frame MIME types.
+        /// <list type="bullet">
+        ///   <item><c>GET …/studies/{studyInstanceUID}/series/{seriesInstanceUID}/instances/{sopInstanceUID}/frames/{frameList}</c></item>
+        /// </list>
+        /// The <c>{frameList}</c> is a comma-separated list of 1-based frame numbers
+        /// (e.g. <c>1</c>, <c>1,3,5</c>).
+        /// </summary>
+        Task HandleWadoFramesRequestAsync(HttpContext context);
     }
 }

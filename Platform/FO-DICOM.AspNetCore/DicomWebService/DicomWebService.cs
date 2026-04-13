@@ -2,11 +2,15 @@
 // Licensed under the Microsoft Public License (MS-PL).
 
 using FellowOakDicom.DicomWeb;
+using FellowOakDicom.Imaging;
+using FellowOakDicom.Imaging.Codec;
+using FellowOakDicom.IO.Buffer;
 using FellowOakDicom.Network;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -239,6 +243,178 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 wadoRequest, context, cancellationToken,
                 (provider, req, ctx, ct) => provider.OnRetrieveMetadataAsync(req, ctx, ct));
             await WadoWriter.WriteMetadataAsync(context, response, cancellationToken);
+        }
+
+        public async Task HandleWadoFramesRequestAsync(HttpContext context)
+        {
+            var cancellationToken = context.RequestAborted;
+
+            // Negotiate MIME type from Accept header before invoking the provider.
+            var negotiation = WadoResponseWriter.NegotiateFrameFormat(context);
+            if (!negotiation.IsAcceptable)
+            {
+                context.Response.StatusCode = StatusCodes.Status406NotAcceptable;
+                return;
+            }
+
+            // Parse the {frameList} route value ("1", "1,3,5", etc.)
+            int[] frameNumbers;
+            try
+            {
+                var parsed = ParseFrameList(RouteUidHelper.GetRouteUid(context, "frameList"));
+                if (parsed.Length == 0)
+                {
+                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                    return;
+                }
+                frameNumbers = parsed;
+            }
+            catch (FormatException ex)
+            {
+                _logger.LogWarning("WADO frames request rejected: invalid frameList — {Reason}", ex.Message);
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
+
+            // Build WADO request and call the provider via OnRetrieveInstancesAsync.
+            var studyUid = RouteUidHelper.GetRouteUid(context, "studyInstanceUID") ?? string.Empty;
+            var seriesUid = RouteUidHelper.GetRouteUid(context, "seriesInstanceUID");
+            var sopUid = RouteUidHelper.GetRouteUid(context, "sopInstanceUID");
+            var wadoRequest = new DicomWadoRequest(studyUid, seriesUid, sopUid, frameNumbers);
+
+            var instanceResponse = await InnerHandleWadoRequestAsync<IDicomWadoInstanceResponse>(
+                wadoRequest, context, cancellationToken,
+                (provider, req, ctx, ct) => provider.OnRetrieveInstancesAsync(req, ctx, ct));
+
+            // If provider returned a failure, surface it directly.
+            if (instanceResponse is DicomWebFailureResponse)
+            {
+                await WadoWriter.WriteFramesAsync(context, (IDicomWadoFrameResponse)instanceResponse, negotiation, cancellationToken);
+                return;
+            }
+
+            // Extract frames from the DicomFile(s) returned by the provider.
+            IDicomWadoFrameResponse? frameResponse;
+            if (instanceResponse is DicomWadoInstancesResponse instancesResponse)
+            {
+                frameResponse = ExtractFrames(instancesResponse.Results, frameNumbers, negotiation);
+                if (frameResponse == null)
+                {
+                    // ExtractFrames returns null when the requested MIME type is incompatible.
+                    context.Response.StatusCode = StatusCodes.Status406NotAcceptable;
+                    return;
+                }
+            }
+            else
+            {
+                // DicomWadoRawInstancesResponse and async variants are not supported for frame extraction.
+                context.Response.StatusCode = StatusCodes.Status406NotAcceptable;
+                return;
+            }
+
+            await WadoWriter.WriteFramesAsync(context, frameResponse, negotiation, cancellationToken);
+        }
+
+        /// <summary>
+        /// Parses a comma-separated frame list string (e.g. <c>"1,3,5"</c>) into an array of
+        /// 1-based frame numbers. Throws <see cref="FormatException"/> when any token is
+        /// non-numeric, zero, or negative.
+        /// </summary>
+        private static int[] ParseFrameList(string? frameList)
+        {
+            if (string.IsNullOrWhiteSpace(frameList))
+            {
+                throw new FormatException("frameList is missing or empty");
+            }
+
+            var parts = frameList.Split(',');
+            var result = new int[parts.Length];
+            for (int i = 0; i < parts.Length; i++)
+            {
+                var token = parts[i].Trim();
+                if (!int.TryParse(token, out int n))
+                {
+                    throw new FormatException($"Non-numeric frame number '{token}'");
+                }
+                if (n < 1)
+                {
+                    throw new FormatException($"Frame number must be >= 1, got {n}");
+                }
+                result[i] = n;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Extracts the requested frames from the provider's <see cref="DicomFile"/> results.
+        /// Returns a <see cref="DicomWadoFramesResponse"/> on success, a
+        /// <see cref="DicomWebFailureResponse"/> on a bad-request error (e.g. frame out of range),
+        /// or <c>null</c> when the requested MIME type is incompatible with the instance's
+        /// transfer syntax (caller should return 406).
+        /// </summary>
+        private static IDicomWadoFrameResponse? ExtractFrames(
+            IList<DicomFile> files,
+            int[] frameNumbers,
+            WadoFrameNegotiationResult negotiation)
+        {
+            // Frame retrieval requires exactly one instance.
+            if (files.Count == 0)
+            {
+                return new DicomWebNotFoundResponse();
+            }
+
+            var file = files[0];
+            var dataset = file.Dataset;
+            var pixelData = DicomPixelData.Create(dataset);
+            var totalFrames = pixelData.NumberOfFrames;
+
+            // Validate all requested frame numbers before extracting any.
+            foreach (var frameNumber in frameNumbers)
+            {
+                if (frameNumber > totalFrames)
+                {
+                    return new DicomWebBadRequestResponse(
+                        $"Frame {frameNumber} is out of range; instance has {totalFrames} frame(s)");
+                }
+            }
+
+            var syntax = file.FileMetaInfo?.TransferSyntax ?? dataset.InternalTransferSyntax;
+            var nativeMime = DicomMediaTypeMap.GetMimeType(syntax);
+            var requestedMime = negotiation.MediaType ?? DicomMediaTypeMap.OctetStream;
+            bool isCompressed = syntax.IsEncapsulated;
+
+            // If the client wants a compressed format that does not match the native syntax → 406.
+            // Return null to signal that the caller should send 406.
+            if (requestedMime != DicomMediaTypeMap.OctetStream && requestedMime != nativeMime)
+            {
+                return null;
+            }
+
+            var frames = new List<DicomWadoFrameData>(frameNumbers.Length);
+            foreach (var frameNumber in frameNumbers)
+            {
+                int zeroBasedIndex = frameNumber - 1;
+                IByteBuffer frameBuffer;
+                string partMime;
+
+                if (requestedMime == DicomMediaTypeMap.OctetStream && isCompressed)
+                {
+                    // Decompress to raw pixels using DicomTranscoder.
+                    var transcoder = new DicomTranscoder(syntax, DicomTransferSyntax.ExplicitVRLittleEndian);
+                    frameBuffer = transcoder.DecodeFrame(dataset, zeroBasedIndex);
+                    partMime = DicomMediaTypeMap.OctetStream;
+                }
+                else
+                {
+                    // Return native frame bytes (compressed or already uncompressed).
+                    frameBuffer = pixelData.GetFrame(zeroBasedIndex);
+                    partMime = nativeMime;
+                }
+
+                frames.Add(new DicomWadoFrameData(frameBuffer, partMime, frameNumber));
+            }
+
+            return new DicomWadoFramesResponse(frames);
         }
 
         /// <summary>

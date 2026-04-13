@@ -110,6 +110,11 @@ namespace FellowOakDicom.AspNetCore
             group.MapGet("/studies/{studyInstanceUID}/series/{seriesInstanceUID}/instances/{sopInstanceUID}/metadata", (HttpContext context) =>
                 HandleDicomWebAsync(context, (svc, ctx) => svc.HandleWadoMetadataRequestAsync(ctx)));
 
+            // ── WADO-RS: Frame Resources (PS3.18 Section 10.4.1.1.4) ───────────
+            // Retrieve specific frames of a single instance
+            group.MapGet("/studies/{studyInstanceUID}/series/{seriesInstanceUID}/instances/{sopInstanceUID}/frames/{frameList}", (HttpContext context) =>
+                HandleDicomWebAsync(context, (svc, ctx) => svc.HandleWadoFramesRequestAsync(ctx)));
+
             // Attach the URL prefix as endpoint metadata so WadoResponseWriter can build
             // Content-Location headers without parsing the request URL at runtime.
             group.WithMetadata(new DicomWebEndpointMetadata(urlPrefix));
