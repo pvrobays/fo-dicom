@@ -100,6 +100,23 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         protected virtual ContentLocationMode ContentLocationMode => ContentLocationMode.Relative;
 
         /// <summary>
+        /// The minimum number of bytes below which a bulk data element is kept inline as
+        /// <c>"InlineBinary"</c> in metadata responses (WADO-RS JSON / XML). Elements with
+        /// <see cref="FellowOakDicom.IO.Buffer.IByteBuffer.Size"/> &gt;
+        /// <see cref="BulkDataInlineThreshold"/> are replaced with a <c>"BulkDataURI"</c>
+        /// reference pointing to the bulk data retrieval endpoint.
+        /// <para>
+        /// The default is <c>0</c>, meaning all bulk data elements (OB, OD, OF, OL, OV, OW, UN)
+        /// are replaced with URIs, which is the behaviour mandated by PS3.18 Section 10.4.1.1.2.
+        /// </para>
+        /// <para>
+        /// Override and return a larger value to keep small elements (e.g. icon pixel data)
+        /// inline; only elements strictly larger than the threshold are replaced.
+        /// </para>
+        /// </summary>
+        protected virtual long BulkDataInlineThreshold => 0;
+
+        /// <summary>
         /// Returns the lazily-initialised <see cref="QidoResponseWriter"/> for this service
         /// instance. The writer is created once from the virtual configuration properties and
         /// reused across all requests. Uses <see cref="Interlocked.CompareExchange{T}"/> for
@@ -129,7 +146,8 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 var existing = _wadoResponseWriter;
                 if (existing != null) return existing;
                 var created = new WadoResponseWriter(
-                    ServiceName, WriteTagsAsKeywords, FormatJsonIndented, ContentLocationMode);
+                    ServiceName, WriteTagsAsKeywords, FormatJsonIndented,
+                    ContentLocationMode, BulkDataInlineThreshold);
                 return Interlocked.CompareExchange(ref _wadoResponseWriter, created, null) ?? created;
             }
         }

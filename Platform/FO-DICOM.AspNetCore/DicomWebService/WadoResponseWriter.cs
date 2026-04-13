@@ -112,17 +112,20 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         private readonly bool _writeTagsAsKeywords;
         private readonly bool _formatJsonIndented;
         private readonly ContentLocationMode _contentLocationMode;
+        private readonly long _bulkDataInlineThreshold;
 
         internal WadoResponseWriter(
             string serviceAgent,
             bool writeTagsAsKeywords,
             bool formatJsonIndented,
-            ContentLocationMode contentLocationMode = ContentLocationMode.Relative)
+            ContentLocationMode contentLocationMode = ContentLocationMode.Relative,
+            long bulkDataInlineThreshold = 0)
         {
             _serviceAgent = serviceAgent;
             _writeTagsAsKeywords = writeTagsAsKeywords;
             _formatJsonIndented = formatJsonIndented;
             _contentLocationMode = contentLocationMode;
+            _bulkDataInlineThreshold = bulkDataInlineThreshold;
         }
 
         // ── Accept header negotiation for instance retrieval ──────────────────
@@ -452,14 +455,14 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                         case QidoResponseFormat.Json:
                             context.Response.StatusCode = StatusCodes.Status200OK;
                             await DicomMetadataSerializer.WriteJsonStreamingAsync(
-                                context, asyncMetadataResponse.Results,
+                                context, ApplyBulkDataUrisAsync(context, asyncMetadataResponse.Results),
                                 _writeTagsAsKeywords, _formatJsonIndented, cancellationToken);
                             break;
 
                         case QidoResponseFormat.Xml:
                             context.Response.StatusCode = StatusCodes.Status200OK;
                             await DicomMetadataSerializer.WriteXmlMultipartStreamingAsync(
-                                context, asyncMetadataResponse.Results, cancellationToken);
+                                context, ApplyBulkDataUrisAsync(context, asyncMetadataResponse.Results), cancellationToken);
                             break;
 
                         case QidoResponseFormat.NotAcceptable:
@@ -474,6 +477,42 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 default:
                     await WriteFailureAsync(context, response, cancellationToken);
                     break;
+            }
+        }
+
+        // ── Bulk data URI helpers ─────────────────────────────────────────────
+
+        /// <summary>
+        /// Replaces bulk data elements in each dataset with <see cref="DicomBulkDataHelper"/>
+        /// before passing to the serializer, so the JSON / XML response contains
+        /// <c>"BulkDataURI"</c> references instead of <c>"InlineBinary"</c>.
+        /// </summary>
+        private IEnumerable<DicomDataset> ApplyBulkDataUris(
+            HttpContext context,
+            IEnumerable<DicomDataset> datasets)
+        {
+            foreach (var ds in datasets)
+            {
+                var baseUrl = BuildBulkBaseUrl(context, ds);
+                yield return baseUrl != null
+                    ? DicomBulkDataHelper.ReplaceBulkDataWithUris(ds, baseUrl, _bulkDataInlineThreshold)
+                    : ds;
+            }
+        }
+
+        /// <summary>
+        /// Async-streaming variant of <see cref="ApplyBulkDataUris"/>.
+        /// </summary>
+        private async IAsyncEnumerable<DicomDataset> ApplyBulkDataUrisAsync(
+            HttpContext context,
+            IAsyncEnumerable<DicomDataset> datasets)
+        {
+            await foreach (var ds in datasets)
+            {
+                var baseUrl = BuildBulkBaseUrl(context, ds);
+                yield return baseUrl != null
+                    ? DicomBulkDataHelper.ReplaceBulkDataWithUris(ds, baseUrl, _bulkDataInlineThreshold)
+                    : ds;
             }
         }
 
@@ -622,6 +661,20 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             return path;
         }
 
+        /// <summary>
+        /// Builds the instance-level base URL used to form bulk data URIs, e.g.
+        /// <c>/dicomweb/studies/{study}/series/{series}/instances/{sop}</c>.
+        /// Returns <c>null</c> when any required piece of information is unavailable
+        /// (missing UIDs, no endpoint metadata, or <see cref="ContentLocationMode.None"/>).
+        /// </summary>
+        private string? BuildBulkBaseUrl(HttpContext context, DicomDataset dataset)
+        {
+            var studyUid  = dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID,  (string?)null);
+            var seriesUid = dataset.GetSingleValueOrDefault(DicomTag.SeriesInstanceUID, (string?)null);
+            var sopUid    = dataset.GetSingleValueOrDefault(DicomTag.SOPInstanceUID,    (string?)null);
+            return BuildContentLocation(context, studyUid, seriesUid, sopUid);
+        }
+
         // ── Metadata writing ──────────────────────────────────────────────────
 
         private async Task WriteMetadataListAsync(
@@ -635,12 +688,14 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 case QidoResponseFormat.Json:
                     context.Response.StatusCode = StatusCodes.Status200OK;
                     await DicomMetadataSerializer.WriteJsonAsync(
-                        context, datasets, _writeTagsAsKeywords, _formatJsonIndented, cancellationToken);
+                        context, ApplyBulkDataUris(context, datasets),
+                        _writeTagsAsKeywords, _formatJsonIndented, cancellationToken);
                     break;
 
                 case QidoResponseFormat.Xml:
                     context.Response.StatusCode = StatusCodes.Status200OK;
-                    await DicomMetadataSerializer.WriteXmlMultipartAsync(context, datasets, cancellationToken);
+                    await DicomMetadataSerializer.WriteXmlMultipartAsync(
+                        context, ApplyBulkDataUris(context, datasets), cancellationToken);
                     break;
 
                 case QidoResponseFormat.NotAcceptable:

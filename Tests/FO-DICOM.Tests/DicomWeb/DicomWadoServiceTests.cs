@@ -1284,6 +1284,104 @@ namespace FellowOakDicom.Tests.DicomWeb
         }
 
         // ─────────────────────────────────────────────────────────────────────────
+        // BulkDataURI in metadata responses (PS3.18 Section 10.4.1.1.2)
+        // ─────────────────────────────────────────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task HandleWadoMetadata_DatasetWithPixelData_JsonContainsBulkDataUri()
+        {
+            // Dataset with OW pixel data — the framework must replace it with BulkDataURI.
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID,      DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.StudyInstanceUID,  "1.2.3");
+            dataset.Add(DicomTag.SeriesInstanceUID, "4.5.6");
+            dataset.Add(DicomTag.SOPInstanceUID,    "7.8.9");
+            dataset.Add(new DicomOtherWord(DicomTag.PixelData,
+                new FellowOakDicom.IO.Buffer.MemoryByteBuffer(new byte[] { 0x01, 0x02, 0x03, 0x04 })));
+
+            var service = new TestWadoService(
+                instancesHandler: null,
+                metadataHandler: (req, ct) =>
+                    Task.FromResult<IDicomWadoMetadataResponse>(
+                        new DicomWadoMetadataResponse(new List<DicomDataset> { dataset })));
+
+            var context = BuildHttpContextWithEndpointMetadata(
+                "/dicomweb",
+                studyUid:  "1.2.3",
+                seriesUid: "4.5.6",
+                sopUid:    "7.8.9",
+                acceptHeader: "application/dicom+json");
+
+            await service.HandleWadoMetadataRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var body = await ReadBodyAsync(context);
+            Assert.Contains("BulkDataURI", body);
+            Assert.DoesNotContain("InlineBinary", body);
+        }
+
+        [FactForNetCore]
+        public async Task HandleWadoMetadata_DatasetWithPixelData_BulkUriContainsInstancePath()
+        {
+            // The BulkDataURI must point to the instance + /bulk/7FE00010.
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID,      DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.StudyInstanceUID,  "1.2.3");
+            dataset.Add(DicomTag.SeriesInstanceUID, "4.5.6");
+            dataset.Add(DicomTag.SOPInstanceUID,    "7.8.9");
+            dataset.Add(new DicomOtherWord(DicomTag.PixelData,
+                new FellowOakDicom.IO.Buffer.MemoryByteBuffer(new byte[] { 0xAB, 0xCD })));
+
+            var service = new TestWadoService(
+                instancesHandler: null,
+                metadataHandler: (req, ct) =>
+                    Task.FromResult<IDicomWadoMetadataResponse>(
+                        new DicomWadoMetadataResponse(new List<DicomDataset> { dataset })));
+
+            var context = BuildHttpContextWithEndpointMetadata(
+                "/dicomweb",
+                studyUid:  "1.2.3",
+                seriesUid: "4.5.6",
+                sopUid:    "7.8.9",
+                acceptHeader: "application/dicom+json");
+
+            await service.HandleWadoMetadataRequestAsync(context);
+
+            var body = await ReadBodyAsync(context);
+            Assert.Contains("/dicomweb/studies/1.2.3/series/4.5.6/instances/7.8.9/bulk/7FE00010", body);
+        }
+
+        [FactForNetCore]
+        public async Task HandleWadoMetadata_DatasetWithoutPixelData_NoBulkDataUri()
+        {
+            // Dataset with only non-bulk VRs — JSON must not contain BulkDataURI.
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID,       DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.StudyInstanceUID,  "1.2.3");
+            dataset.Add(DicomTag.SeriesInstanceUID, "4.5.6");
+            dataset.Add(DicomTag.SOPInstanceUID,    "7.8.9");
+            dataset.Add(DicomTag.PatientName,       "Doe^John");
+
+            var service = new TestWadoService(
+                instancesHandler: null,
+                metadataHandler: (req, ct) =>
+                    Task.FromResult<IDicomWadoMetadataResponse>(
+                        new DicomWadoMetadataResponse(new List<DicomDataset> { dataset })));
+
+            var context = BuildHttpContextWithEndpointMetadata(
+                "/dicomweb",
+                studyUid:  "1.2.3",
+                seriesUid: "4.5.6",
+                sopUid:    "7.8.9",
+                acceptHeader: "application/dicom+json");
+
+            await service.HandleWadoMetadataRequestAsync(context);
+
+            var body = await ReadBodyAsync(context);
+            Assert.DoesNotContain("BulkDataURI", body);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
         // Helpers
         // ─────────────────────────────────────────────────────────────────────────
 
