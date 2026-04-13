@@ -106,47 +106,12 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     }
                     break;
 
-                case DicomWebBadRequestResponse badRequestResponse:
-                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
-                    if (badRequestResponse.Reason != null)
-                    {
-                        await context.Response.WriteAsync(badRequestResponse.Reason,
-                            cancellationToken: cancellationToken);
-                    }
-                    break;
-
                 case DicomQidoRequestTooBroadResponse _:
                     context.Response.StatusCode = StatusCodes.Status413RequestEntityTooLarge;
                     break;
 
-                case DicomWebForbiddenResponse _:
-                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                    break;
-
-                case DicomWebUnauthorizedResponse _:
-                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                    break;
-
-                case DicomWebNotFoundResponse notFoundResponse:
-                    context.Response.StatusCode = StatusCodes.Status404NotFound;
-                    if (notFoundResponse.Reason != null)
-                    {
-                        await context.Response.WriteAsync(notFoundResponse.Reason,
-                            cancellationToken: cancellationToken);
-                    }
-                    break;
-
-                case DicomWebUnavailableResponse unavailableResponse:
-                    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                    if (unavailableResponse.Reason != null)
-                    {
-                        await context.Response.WriteAsync(unavailableResponse.Reason,
-                            cancellationToken: cancellationToken);
-                    }
-                    break;
-
-                case DicomWebNotImplementedResponse _:
-                    context.Response.StatusCode = StatusCodes.Status501NotImplemented;
+                case DicomWebFailureResponse failureResponse:
+                    await DicomWebFailureWriter.WriteAsync(context, failureResponse, cancellationToken);
                     break;
 
                 default:

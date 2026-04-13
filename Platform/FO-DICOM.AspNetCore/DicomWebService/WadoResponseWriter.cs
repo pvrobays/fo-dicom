@@ -762,53 +762,18 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
         // ── Failure response mapping ──────────────────────────────────────────
 
-        private static async Task WriteFailureAsync(
+        private static Task WriteFailureAsync(
             HttpContext context,
             IDicomWadoResponse response,
             CancellationToken cancellationToken)
         {
-            switch (response)
+            if (response is DicomWebFailureResponse failureResponse)
             {
-                case DicomWebBadRequestResponse badRequestResponse:
-                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
-                    if (badRequestResponse.Reason != null)
-                    {
-                        await context.Response.WriteAsync(badRequestResponse.Reason, cancellationToken);
-                    }
-                    break;
-
-                case DicomWebUnauthorizedResponse _:
-                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                    break;
-
-                case DicomWebForbiddenResponse _:
-                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                    break;
-
-                case DicomWebNotFoundResponse notFoundResponse:
-                    context.Response.StatusCode = StatusCodes.Status404NotFound;
-                    if (notFoundResponse.Reason != null)
-                    {
-                        await context.Response.WriteAsync(notFoundResponse.Reason, cancellationToken);
-                    }
-                    break;
-
-                case DicomWebNotImplementedResponse _:
-                    context.Response.StatusCode = StatusCodes.Status501NotImplemented;
-                    break;
-
-                case DicomWebUnavailableResponse unavailableResponse:
-                    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                    if (unavailableResponse.Reason != null)
-                    {
-                        await context.Response.WriteAsync(unavailableResponse.Reason, cancellationToken);
-                    }
-                    break;
-
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(response),
-                        $"Unrecognised WADO response type: {response?.GetType().Name}");
+                return DicomWebFailureWriter.WriteAsync(context, failureResponse, cancellationToken);
             }
+
+            throw new ArgumentOutOfRangeException(nameof(response),
+                $"Unrecognised WADO response type: {response?.GetType().Name}");
         }
 
         // ── Async enumerable helpers ──────────────────────────────────────────
