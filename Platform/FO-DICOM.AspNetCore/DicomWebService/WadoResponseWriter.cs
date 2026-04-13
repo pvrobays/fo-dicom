@@ -6,7 +6,6 @@ using FellowOakDicom.Imaging.Codec;
 using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -509,12 +508,8 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 }
                 await context.Response.WriteAsync("\r\n", cancellationToken);
 
-                using (var ms = new MemoryStream())
-                {
-                    await file.SaveAsync(ms);
-                    ms.Seek(0, SeekOrigin.Begin);
-                    await ms.CopyToAsync(context.Response.Body, 81920, cancellationToken);
-                }
+                // DicomFile.SaveAsync writes forward-only; no intermediate MemoryStream needed.
+                await file.SaveAsync(context.Response.Body);
                 await context.Response.WriteAsync("\r\n", cancellationToken);
             }
 
