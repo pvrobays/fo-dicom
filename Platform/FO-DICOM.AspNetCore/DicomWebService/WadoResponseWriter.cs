@@ -130,7 +130,9 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// Parses the HTTP <c>Accept</c> header to determine the requested transfer syntax
         /// for a WADO-RS instance retrieval request (PS3.18 Section 8.7).
         /// <list type="bullet">
-        ///   <item>Missing / empty / <c>*/*</c> → pragmatic default (Explicit VR Little Endian)</item>
+        ///   <item>Missing / empty / <c>*/*</c> → pragmatic default (Explicit VR Little Endian).
+        ///     <c>*/*</c> is treated as default regardless of position in the list; quality-factor
+        ///     negotiation (RFC 7231) is not implemented.</item>
         ///   <item><c>multipart/related; type="application/dicom"</c> with no <c>transfer-syntax</c> → default (Explicit VR LE)</item>
         ///   <item><c>... transfer-syntax=*</c> → accept any transfer syntax (no transcoding)</item>
         ///   <item><c>... transfer-syntax=&lt;uid&gt;</c> → specific transfer syntax requested</item>
@@ -147,17 +149,40 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 return WadoInstanceNegotiationResult.Default;
             }
 
-            // Must contain application/dicom for instance retrieval
-            int dicomIdx = acceptHeader.IndexOf("application/dicom", StringComparison.OrdinalIgnoreCase);
+            // Must contain application/dicom (the bare WADO-RS media type, not +json or +xml).
+            // Scan for the token and verify that the character immediately following it is NOT
+            // '+' — this prevents matching application/dicom+json or application/dicom+xml.
+            int searchFrom = 0;
+            int dicomIdx = -1;
+            const string dicomToken = "application/dicom";
+            while (true)
+            {
+                int idx = acceptHeader.IndexOf(dicomToken, searchFrom, StringComparison.OrdinalIgnoreCase);
+                if (idx < 0) break;
+
+                int afterToken = idx + dicomToken.Length;
+                // Only accept this match if the token is followed by a word boundary
+                // (end-of-string, whitespace, ';', ',', or '"') — not '+'.
+                if (afterToken >= acceptHeader.Length ||
+                    acceptHeader[afterToken] == ' ' || acceptHeader[afterToken] == '\t' ||
+                    acceptHeader[afterToken] == ';' || acceptHeader[afterToken] == ',' ||
+                    acceptHeader[afterToken] == '"')
+                {
+                    dicomIdx = idx;
+                    break;
+                }
+
+                // This occurrence was application/dicom+something — skip past it and keep looking.
+                searchFrom = afterToken;
+            }
+
             if (dicomIdx < 0)
             {
                 return WadoInstanceNegotiationResult.NotAcceptable;
             }
 
-            // Look for transfer-syntax parameter after the application/dicom token
-            // The rest of this media-type entry ends at the next comma (if any) that
-            // isn't inside a quoted string.
-            int tsCandidateStart = dicomIdx + "application/dicom".Length;
+            // Look for transfer-syntax parameter after the application/dicom token.
+            int tsCandidateStart = dicomIdx + dicomToken.Length;
             string remainder = acceptHeader.Substring(tsCandidateStart);
 
             // Find transfer-syntax= parameter (case-insensitive)

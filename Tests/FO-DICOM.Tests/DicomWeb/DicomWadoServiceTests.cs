@@ -979,6 +979,31 @@ namespace FellowOakDicom.Tests.DicomWeb
             Assert.Equal(DicomTransferSyntax.ExplicitVRLittleEndian, result.RequestedTransferSyntax);
         }
 
+        [FactForNetCore]
+        public void NegotiateInstanceFormat_ApplicationDicomPlusJson_ReturnsNotAcceptable()
+        {
+            // application/dicom+json is NOT application/dicom — must not be treated as a match.
+            // Previously the substring "application/dicom" would be found without a word-boundary
+            // check and the parser would incorrectly return a result instead of 406.
+            var context = BuildHttpContext("application/dicom+json");
+            var result = WadoResponseWriter.NegotiateInstanceFormat(context);
+
+            Assert.False(result.IsAcceptable);
+        }
+
+        [FactForNetCore]
+        public void NegotiateInstanceFormat_DicomPlusJsonAndDicom_DicomIsFound()
+        {
+            // When both application/dicom+json and application/dicom appear in the Accept header,
+            // the parser must skip the +json variant and find the bare application/dicom token.
+            var context = BuildHttpContext(
+                "application/dicom+json, multipart/related; type=\"application/dicom\"; transfer-syntax=*");
+            var result = WadoResponseWriter.NegotiateInstanceFormat(context);
+
+            Assert.True(result.IsAcceptable);
+            Assert.True(result.AcceptsAnyTransferSyntax);
+        }
+
         // ─────────────────────────────────────────────────────────────────────────
         // Content-Location per multipart part (PS3.18 Section 10.4.1.1)
         // ─────────────────────────────────────────────────────────────────────────
