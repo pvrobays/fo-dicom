@@ -175,11 +175,21 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         public async Task HandleWadoInstancesRequestAsync(HttpContext context)
         {
             var cancellationToken = context.RequestAborted;
-            var wadoRequest = BuildWadoRequest(context);
+
+            // Negotiate transfer syntax from Accept header before invoking the provider.
+            // A 406 result means no supported media type was found — short-circuit immediately.
+            var negotiation = WadoResponseWriter.NegotiateInstanceFormat(context);
+            if (!negotiation.IsAcceptable)
+            {
+                context.Response.StatusCode = StatusCodes.Status406NotAcceptable;
+                return;
+            }
+
+            var wadoRequest = BuildWadoRequest(context, negotiation);
             var response = await InnerHandleWadoRequestAsync<IDicomWadoInstanceResponse>(
                 wadoRequest, context, cancellationToken,
                 (provider, req, ctx, ct) => provider.OnRetrieveInstancesAsync(req, ctx, ct));
-            await WadoWriter.WriteInstancesAsync(context, response, cancellationToken);
+            await WadoWriter.WriteInstancesAsync(context, response, negotiation, cancellationToken);
         }
 
         public async Task HandleWadoMetadataRequestAsync(HttpContext context)
@@ -193,7 +203,23 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         }
 
         /// <summary>
-        /// Builds a <see cref="DicomWadoRequest"/> from the route values in the current HTTP context.
+        /// Builds a <see cref="DicomWadoRequest"/> from the route values in the current HTTP context
+        /// and the pre-negotiated transfer-syntax preference.
+        /// </summary>
+        private static DicomWadoRequest BuildWadoRequest(HttpContext context, WadoInstanceNegotiationResult negotiation)
+        {
+            var studyUid = RouteUidHelper.GetRouteUid(context, "studyInstanceUID") ?? string.Empty;
+            var seriesUid = RouteUidHelper.GetRouteUid(context, "seriesInstanceUID");
+            var sopUid = RouteUidHelper.GetRouteUid(context, "sopInstanceUID");
+            return new DicomWadoRequest(
+                studyUid, seriesUid, sopUid,
+                negotiation.RequestedTransferSyntax,
+                negotiation.AcceptsAnyTransferSyntax);
+        }
+
+        /// <summary>
+        /// Builds a <see cref="DicomWadoRequest"/> from the route values in the current HTTP context,
+        /// without transfer-syntax negotiation (used for metadata requests).
         /// </summary>
         private static DicomWadoRequest BuildWadoRequest(HttpContext context)
         {

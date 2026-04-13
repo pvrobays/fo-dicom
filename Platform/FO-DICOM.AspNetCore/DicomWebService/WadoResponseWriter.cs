@@ -2,6 +2,7 @@
 // Licensed under the Microsoft Public License (MS-PL).
 
 using FellowOakDicom.DicomWeb;
+using FellowOakDicom.Imaging.Codec;
 using FellowOakDicom.Serialization;
 using Microsoft.AspNetCore.Http;
 using System;
@@ -13,6 +14,61 @@ using System.Threading.Tasks;
 
 namespace FellowOakDicom.AspNetCore.DicomWebService
 {
+    // ── Content negotiation result for WADO-RS instance retrieval ────────────
+
+    /// <summary>
+    /// The result of <c>Accept</c> header negotiation for a WADO-RS instance retrieval request.
+    /// </summary>
+    internal readonly struct WadoInstanceNegotiationResult
+    {
+        /// <summary>
+        /// <c>false</c> when none of the client's acceptable media types are supported;
+        /// the service should return HTTP 406 Not Acceptable.
+        /// </summary>
+        internal bool IsAcceptable { get; }
+
+        /// <summary>
+        /// The specific transfer syntax parsed from <c>transfer-syntax=&lt;uid&gt;</c> in the
+        /// <c>Accept</c> header, or <c>null</c> when the client sent <c>transfer-syntax=*</c>
+        /// or omitted the parameter entirely.
+        /// </summary>
+        internal DicomTransferSyntax? RequestedTransferSyntax { get; }
+
+        /// <summary>
+        /// <c>true</c> when the client sent <c>transfer-syntax=*</c>, meaning it will accept
+        /// any transfer syntax and no transcoding should be performed.
+        /// </summary>
+        internal bool AcceptsAnyTransferSyntax { get; }
+
+        internal WadoInstanceNegotiationResult(
+            bool isAcceptable,
+            DicomTransferSyntax? requestedTransferSyntax,
+            bool acceptsAnyTransferSyntax)
+        {
+            IsAcceptable = isAcceptable;
+            RequestedTransferSyntax = requestedTransferSyntax;
+            AcceptsAnyTransferSyntax = acceptsAnyTransferSyntax;
+        }
+
+        /// <summary>A pre-built result for HTTP 406 Not Acceptable.</summary>
+        internal static WadoInstanceNegotiationResult NotAcceptable
+            => new WadoInstanceNegotiationResult(false, null, false);
+
+        /// <summary>
+        /// A pre-built result meaning "accept any transfer syntax" (no transcoding).
+        /// Used for <c>transfer-syntax=*</c> and pragmatic defaults.
+        /// </summary>
+        internal static WadoInstanceNegotiationResult AnyTransferSyntax
+            => new WadoInstanceNegotiationResult(true, null, true);
+
+        /// <summary>
+        /// A pre-built result meaning "use the default transfer syntax"
+        /// (Explicit VR Little Endian, per PS3.18 Section 8.7.3).
+        /// </summary>
+        internal static WadoInstanceNegotiationResult Default
+            => new WadoInstanceNegotiationResult(true, DicomTransferSyntax.ExplicitVRLittleEndian, false);
+    }
+
     /// <summary>
     /// Translates an <see cref="IDicomWadoResponse"/> into an HTTP response, handling content
     /// negotiation, multipart serialization of DICOM instances and metadata, and error mapping.
@@ -34,23 +90,165 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             _formatJsonIndented = formatJsonIndented;
         }
 
+        // ── Accept header negotiation for instance retrieval ──────────────────
+
+        /// <summary>
+        /// Parses the HTTP <c>Accept</c> header to determine the requested transfer syntax
+        /// for a WADO-RS instance retrieval request (PS3.18 Section 8.7).
+        /// <list type="bullet">
+        ///   <item>Missing / empty / <c>*/*</c> → pragmatic default (Explicit VR Little Endian)</item>
+        ///   <item><c>multipart/related; type="application/dicom"</c> with no <c>transfer-syntax</c> → default (Explicit VR LE)</item>
+        ///   <item><c>... transfer-syntax=*</c> → accept any transfer syntax (no transcoding)</item>
+        ///   <item><c>... transfer-syntax=&lt;uid&gt;</c> → specific transfer syntax requested</item>
+        ///   <item>Any other media type → 406 Not Acceptable</item>
+        /// </list>
+        /// </summary>
+        internal static WadoInstanceNegotiationResult NegotiateInstanceFormat(HttpContext context)
+        {
+            var acceptHeader = context.Request.Headers["Accept"].ToString();
+
+            // Missing / empty or wildcard → pragmatic default (Explicit VR LE)
+            if (string.IsNullOrWhiteSpace(acceptHeader) || acceptHeader.Contains("*/*"))
+            {
+                return WadoInstanceNegotiationResult.Default;
+            }
+
+            // Must contain application/dicom for instance retrieval
+            int dicomIdx = acceptHeader.IndexOf("application/dicom", StringComparison.OrdinalIgnoreCase);
+            if (dicomIdx < 0)
+            {
+                return WadoInstanceNegotiationResult.NotAcceptable;
+            }
+
+            // Look for transfer-syntax parameter after the application/dicom token
+            // The rest of this media-type entry ends at the next comma (if any) that
+            // isn't inside a quoted string.
+            int tsCandidateStart = dicomIdx + "application/dicom".Length;
+            string remainder = acceptHeader.Substring(tsCandidateStart);
+
+            // Find transfer-syntax= parameter (case-insensitive)
+            int tsParamIdx = remainder.IndexOf("transfer-syntax", StringComparison.OrdinalIgnoreCase);
+
+            if (tsParamIdx < 0)
+            {
+                // application/dicom present but no transfer-syntax parameter → default
+                return WadoInstanceNegotiationResult.Default;
+            }
+
+            // Advance past "transfer-syntax" and optional whitespace / '='
+            int afterKey = tsParamIdx + "transfer-syntax".Length;
+            while (afterKey < remainder.Length && (remainder[afterKey] == ' ' || remainder[afterKey] == '\t'))
+            {
+                afterKey++;
+            }
+
+            if (afterKey >= remainder.Length || remainder[afterKey] != '=')
+            {
+                // Malformed parameter — treat as default
+                return WadoInstanceNegotiationResult.Default;
+            }
+
+            afterKey++; // skip '='
+
+            // Skip any whitespace after '='
+            while (afterKey < remainder.Length && (remainder[afterKey] == ' ' || remainder[afterKey] == '\t'))
+            {
+                afterKey++;
+            }
+
+            // Read the value until semicolon, comma, or end (strip optional quotes)
+            int valueStart = afterKey;
+            if (valueStart >= remainder.Length)
+            {
+                return WadoInstanceNegotiationResult.Default;
+            }
+
+            bool quoted = remainder[valueStart] == '"';
+            if (quoted) valueStart++;
+
+            int valueEnd = valueStart;
+            while (valueEnd < remainder.Length)
+            {
+                char c = remainder[valueEnd];
+                if (quoted ? c == '"' : (c == ';' || c == ',' || c == ' ' || c == '\t'))
+                {
+                    break;
+                }
+                valueEnd++;
+            }
+
+            string tsValue = remainder.Substring(valueStart, valueEnd - valueStart).Trim();
+
+            if (tsValue == "*")
+            {
+                return WadoInstanceNegotiationResult.AnyTransferSyntax;
+            }
+
+            if (string.IsNullOrEmpty(tsValue))
+            {
+                return WadoInstanceNegotiationResult.Default;
+            }
+
+            // Parse the UID
+            try
+            {
+                var ts = DicomTransferSyntax.Parse(tsValue);
+                return new WadoInstanceNegotiationResult(true, ts, false);
+            }
+            catch
+            {
+                // Unknown / unparseable UID — treat as not acceptable
+                return WadoInstanceNegotiationResult.NotAcceptable;
+            }
+        }
+
         // ── Instance retrieval ────────────────────────────────────────────────
 
         /// <summary>
         /// Writes the HTTP response for a WADO-RS instance retrieval request.
+        /// <para>
+        /// When <paramref name="negotiation"/> specifies a particular transfer syntax,
+        /// <see cref="DicomFile"/>-based responses are automatically transcoded to match.
+        /// For list responses, if any file cannot be transcoded the response is set to
+        /// 406 Not Acceptable before any data is written. For async-streaming responses
+        /// a failed transcode falls back to the original transfer syntax and a
+        /// <c>Warning: 299</c> header is emitted.
+        /// </para>
+        /// <para>
+        /// Raw byte-stream responses (<see cref="DicomWadoRawInstancesResponse"/> /
+        /// <see cref="DicomWadoAsyncRawInstancesResponse"/>) are written verbatim —
+        /// the provider is assumed to have already encoded them correctly.
+        /// </para>
         /// Success responses are written as <c>multipart/related; type="application/dicom"</c>
-        /// (PS3.18 Table 10.4.4-1). Failure responses are mapped to the appropriate HTTP status.
+        /// (PS3.18 Table 10.4.4-1).
         /// </summary>
         internal async Task WriteInstancesAsync(
             HttpContext context,
             IDicomWadoInstanceResponse response,
+            WadoInstanceNegotiationResult negotiation,
             CancellationToken cancellationToken)
         {
             switch (response)
             {
                 case DicomWadoInstancesResponse instancesResponse:
-                    await WriteDicomMultipartAsync(context,
-                        EnumerateFilesAsync(instancesResponse.Results), cancellationToken);
+                    // Determine effective target syntax (null = keep original)
+                    var targetSyntax = ResolveTargetSyntax(negotiation);
+                    if (targetSyntax != null)
+                    {
+                        // Pre-transcode all files; return 406 if any fails
+                        var transcoded = TryTranscodeAll(instancesResponse.Results, targetSyntax, context);
+                        if (transcoded == null)
+                        {
+                            return; // 406 already written
+                        }
+                        await WriteDicomMultipartAsync(context, EnumerateFilesAsync(transcoded),
+                            targetSyntax, cancellationToken);
+                    }
+                    else
+                    {
+                        await WriteDicomMultipartAsync(context, EnumerateFilesAsync(instancesResponse.Results),
+                            null, cancellationToken);
+                    }
                     break;
 
                 case DicomWadoRawInstancesResponse rawResponse:
@@ -59,7 +257,12 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     break;
 
                 case DicomWadoAsyncInstancesResponse asyncResponse:
-                    await WriteDicomMultipartAsync(context, asyncResponse.Results, cancellationToken);
+                    var asyncTarget = ResolveTargetSyntax(negotiation);
+                    await WriteDicomMultipartAsync(context,
+                        asyncTarget != null
+                            ? TranscodeStreamingAsync(asyncResponse.Results, asyncTarget, context, cancellationToken)
+                            : asyncResponse.Results,
+                        asyncTarget, cancellationToken);
                     break;
 
                 case DicomWadoAsyncRawInstancesResponse asyncRawResponse:
@@ -71,6 +274,99 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     break;
             }
         }
+
+        /// <summary>
+        /// Returns the target <see cref="DicomTransferSyntax"/> to use for transcoding, or
+        /// <c>null</c> when the instances should be returned in their original transfer syntax
+        /// (i.e., <c>transfer-syntax=*</c> was requested).
+        /// </summary>
+        private static DicomTransferSyntax? ResolveTargetSyntax(WadoInstanceNegotiationResult negotiation)
+        {
+            if (negotiation.AcceptsAnyTransferSyntax)
+            {
+                return null; // no transcoding
+            }
+
+            // Specific syntax requested, or default (Explicit VR LE)
+            return negotiation.RequestedTransferSyntax ?? DicomTransferSyntax.ExplicitVRLittleEndian;
+        }
+
+        /// <summary>
+        /// Attempts to transcode all files in <paramref name="files"/> to
+        /// <paramref name="targetSyntax"/>. Returns the transcoded list on success, or
+        /// <c>null</c> if any file cannot be transcoded (in which case a 406 response has
+        /// already been written to <paramref name="context"/>).
+        /// </summary>
+        private static IList<DicomFile>? TryTranscodeAll(
+            IList<DicomFile> files,
+            DicomTransferSyntax targetSyntax,
+            HttpContext context)
+        {
+            var result = new List<DicomFile>(files.Count);
+            foreach (var file in files)
+            {
+                var currentSyntax = file.FileMetaInfo?.TransferSyntax ?? file.Dataset.InternalTransferSyntax;
+                if (currentSyntax == targetSyntax)
+                {
+                    result.Add(file);
+                    continue;
+                }
+
+                try
+                {
+                    result.Add(file.Clone(targetSyntax));
+                }
+                catch
+                {
+                    context.Response.StatusCode = StatusCodes.Status406NotAcceptable;
+                    return null;
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Transcodes each file in the async stream to <paramref name="targetSyntax"/>.
+        /// On failure, emits a <c>Warning: 299</c> header (if headers haven't been sent yet)
+        /// and falls back to the original file.
+        /// </summary>
+#pragma warning disable CS1998 // async without await — yield-based
+        private async IAsyncEnumerable<DicomFile> TranscodeStreamingAsync(
+            IAsyncEnumerable<DicomFile> source,
+            DicomTransferSyntax targetSyntax,
+            HttpContext context,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await foreach (var file in source.WithCancellation(cancellationToken))
+            {
+                var currentSyntax = file.FileMetaInfo?.TransferSyntax ?? file.Dataset.InternalTransferSyntax;
+                if (currentSyntax == targetSyntax)
+                {
+                    yield return file;
+                    continue;
+                }
+
+                DicomFile transcoded;
+                try
+                {
+                    transcoded = file.Clone(targetSyntax);
+                }
+                catch
+                {
+                    // Already committed to 200 — fall back to original and warn
+                    if (!context.Response.HasStarted)
+                    {
+                        context.Response.Headers.Append("Warning",
+                            $"299 {_serviceAgent} \"The requested transfer syntax could not be applied to one or more instances; original transfer syntax used.\"");
+                    }
+                    transcoded = file;
+                }
+
+                yield return transcoded;
+            }
+        }
+#pragma warning restore CS1998
 
         // ── Metadata retrieval ────────────────────────────────────────────────
 
@@ -131,9 +427,16 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
         // ── Multipart DICOM instance writing ─────────────────────────────────
 
+        /// <summary>
+        /// Writes each DICOM file as a multipart part with
+        /// <c>Content-Type: application/dicom; transfer-syntax=&lt;uid&gt;</c>.
+        /// When <paramref name="transferSyntax"/> is <c>null</c> the transfer syntax is read
+        /// from each file's own metadata and included in the Content-Type header.
+        /// </summary>
         private static async Task WriteDicomMultipartAsync(
             HttpContext context,
             IAsyncEnumerable<DicomFile> files,
+            DicomTransferSyntax? transferSyntax,
             CancellationToken cancellationToken)
         {
             var boundary = $"----dicom-boundary-{Guid.NewGuid():N}";
@@ -143,11 +446,16 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
             await foreach (var file in files.WithCancellation(cancellationToken))
             {
-                // Part header
-                await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
-                await context.Response.WriteAsync("Content-Type: application/dicom\r\n\r\n", cancellationToken);
+                // Determine the actual transfer syntax for this part
+                var partSyntax = transferSyntax
+                    ?? file.FileMetaInfo?.TransferSyntax
+                    ?? file.Dataset.InternalTransferSyntax;
 
-                // Part body: serialize the DicomFile into a temporary buffer then flush it
+                await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
+                await context.Response.WriteAsync(
+                    $"Content-Type: application/dicom; transfer-syntax={partSyntax.UID.UID}\r\n\r\n",
+                    cancellationToken);
+
                 using (var ms = new MemoryStream())
                 {
                     await file.SaveAsync(ms);
@@ -157,7 +465,6 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 await context.Response.WriteAsync("\r\n", cancellationToken);
             }
 
-            // Closing boundary
             await context.Response.WriteAsync($"--{boundary}--\r\n", cancellationToken);
         }
 
@@ -173,7 +480,6 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
             await foreach (var part in parts.WithCancellation(cancellationToken))
             {
-                // Part header — include transfer-syntax parameter when known
                 await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
                 if (part.TransferSyntaxUid != null)
                 {

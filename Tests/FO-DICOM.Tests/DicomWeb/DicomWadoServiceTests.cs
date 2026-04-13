@@ -630,6 +630,354 @@ namespace FellowOakDicom.Tests.DicomWeb
         }
 
         // ─────────────────────────────────────────────────────────────────────────
+        // Transfer-syntax content negotiation
+        // ─────────────────────────────────────────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task HandleWadoInstancesRequest_NoAcceptHeader_Returns200WithDefaultBehavior()
+        {
+            // Missing Accept → pragmatic default (Explicit VR LE), not 406.
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())));
+
+            var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3"); // no acceptHeader
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.Contains("multipart/related", context.Response.ContentType);
+        }
+
+        [FactForNetCore]
+        public async Task HandleWadoInstancesRequest_WildcardAccept_Returns200()
+        {
+            // */* → accept any, treated as default
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())));
+
+            var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3", acceptHeader: "*/*");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task HandleWadoInstancesRequest_ApplicationDicomAccept_Returns200()
+        {
+            // application/dicom with no transfer-syntax param → default (Explicit VR LE)
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())));
+
+            var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3",
+                acceptHeader: "multipart/related; type=\"application/dicom\"");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task HandleWadoInstancesRequest_UnsupportedAcceptType_Returns406()
+        {
+            // text/html is not application/dicom → 406
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())));
+
+            var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3", acceptHeader: "text/html");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status406NotAcceptable, context.Response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task HandleWadoInstancesRequest_UnsupportedAcceptType_ProviderNotCalled()
+        {
+            // 406 should be returned before the provider is ever invoked
+            bool providerCalled = false;
+            var service = new TestWadoService((req, ct) =>
+            {
+                providerCalled = true;
+                return Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
+            });
+
+            var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3", acceptHeader: "image/jpeg");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status406NotAcceptable, context.Response.StatusCode);
+            Assert.False(providerCalled);
+        }
+
+        [FactForNetCore]
+        public async Task HandleWadoInstancesRequest_TransferSyntaxWildcard_SetsAcceptsAnyOnRequest()
+        {
+            // transfer-syntax=* → AcceptsAnyTransferSyntax=true, RequestedTransferSyntax=null
+            DicomWadoRequest captured = null;
+            var service = new TestWadoService((req, ct) =>
+            {
+                captured = req;
+                return Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
+            });
+
+            var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3",
+                acceptHeader: "multipart/related; type=\"application/dicom\"; transfer-syntax=*");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.NotNull(captured);
+            Assert.True(captured.AcceptsAnyTransferSyntax);
+            Assert.Null(captured.RequestedTransferSyntax);
+        }
+
+        [FactForNetCore]
+        public async Task HandleWadoInstancesRequest_SpecificTransferSyntax_SetsRequestedSyntaxOnRequest()
+        {
+            // transfer-syntax=1.2.840.10008.1.2.1 (Explicit VR LE) → RequestedTransferSyntax set
+            DicomWadoRequest captured = null;
+            var service = new TestWadoService((req, ct) =>
+            {
+                captured = req;
+                return Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
+            });
+
+            const string explicitVrLe = "1.2.840.10008.1.2.1";
+            var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3",
+                acceptHeader: $"multipart/related; type=\"application/dicom\"; transfer-syntax={explicitVrLe}");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.NotNull(captured);
+            Assert.False(captured.AcceptsAnyTransferSyntax);
+            Assert.NotNull(captured.RequestedTransferSyntax);
+            Assert.Equal(explicitVrLe, captured.RequestedTransferSyntax!.UID.UID);
+        }
+
+        [FactForNetCore]
+        public async Task HandleWadoInstancesRequest_NoAcceptHeader_RequestHasDefaultSyntax()
+        {
+            // No Accept → default Explicit VR LE is applied; AcceptsAny is false
+            DicomWadoRequest captured = null;
+            var service = new TestWadoService((req, ct) =>
+            {
+                captured = req;
+                return Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
+            });
+
+            var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.NotNull(captured);
+            Assert.False(captured.AcceptsAnyTransferSyntax);
+            Assert.NotNull(captured.RequestedTransferSyntax);
+            Assert.Equal(DicomTransferSyntax.ExplicitVRLittleEndian, captured.RequestedTransferSyntax);
+        }
+
+        [FactForNetCore]
+        public async Task HandleWadoInstancesRequest_TransferSyntaxWildcard_DicomFileNotTranscoded()
+        {
+            // transfer-syntax=* → file should be returned in its original syntax
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.SOPInstanceUID, DicomUID.Generate());
+            // Default internal syntax is Explicit VR LE already, so we can verify the
+            // transfer-syntax param in the part header matches the file's own syntax.
+            var dicomFile = new DicomFile(dataset);
+
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(
+                    new DicomWadoInstancesResponse(new List<DicomFile> { dicomFile })));
+
+            var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3",
+                acceptHeader: "multipart/related; type=\"application/dicom\"; transfer-syntax=*");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var body = await ReadBodyAsync(context);
+            // transfer-syntax should appear in the Content-Type of the part
+            Assert.Contains("transfer-syntax=", body);
+        }
+
+        [FactForNetCore]
+        public async Task HandleWadoInstancesRequest_SpecificTransferSyntax_PartContentTypeIncludesSyntax()
+        {
+            // Explicit VR LE requested, file already in Explicit VR LE → no transcoding needed,
+            // but transfer-syntax should appear in the per-part Content-Type header.
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.SOPInstanceUID, DicomUID.Generate());
+            var dicomFile = new DicomFile(dataset);
+
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(
+                    new DicomWadoInstancesResponse(new List<DicomFile> { dicomFile })));
+
+            const string explicitVrLe = "1.2.840.10008.1.2.1";
+            var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3",
+                acceptHeader: $"multipart/related; type=\"application/dicom\"; transfer-syntax={explicitVrLe}");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var body = await ReadBodyAsync(context);
+            Assert.Contains($"transfer-syntax={explicitVrLe}", body);
+        }
+
+        [FactForNetCore]
+        public async Task HandleWadoInstancesRequest_RawResponse_TransferSyntaxRequestIgnored_Returns200()
+        {
+            // Raw responses pass through as-is regardless of requested transfer syntax.
+            const string explicitVrLe = "1.2.840.10008.1.2.1";
+            var rawInstance = new DicomWadoRawInstance(
+                new MemoryStream(new byte[] { 0xDE, 0xAD, 0xBE, 0xEF }),
+                transferSyntaxUid: explicitVrLe);
+            var response = new DicomWadoRawInstancesResponse(new List<DicomWadoRawInstance> { rawInstance });
+
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(response));
+
+            var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3",
+                acceptHeader: $"multipart/related; type=\"application/dicom\"; transfer-syntax={explicitVrLe}");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var body = await ReadBodyAsync(context);
+            Assert.Contains($"transfer-syntax={explicitVrLe}", body);
+        }
+
+        [FactForNetCore]
+        public async Task HandleWadoInstancesRequest_TranscodeFailure_Returns406()
+        {
+            // Request a transfer syntax that requires a codec that won't be available
+            // in this minimal test environment. Use a known-compressed UID that fo-dicom
+            // cannot encode without a native codec plugin (e.g., JPEG 2000 Lossless).
+            const string jpeg2kLossless = "1.2.840.10008.1.2.4.90";
+
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.SOPInstanceUID, DicomUID.Generate());
+            dataset.Add(DicomTag.Rows, (ushort)2);
+            dataset.Add(DicomTag.Columns, (ushort)2);
+            dataset.Add(DicomTag.BitsAllocated, (ushort)8);
+            dataset.Add(DicomTag.BitsStored, (ushort)8);
+            dataset.Add(DicomTag.HighBit, (ushort)7);
+            dataset.Add(DicomTag.PixelRepresentation, (ushort)0);
+            dataset.Add(DicomTag.SamplesPerPixel, (ushort)1);
+            dataset.Add(DicomTag.PhotometricInterpretation, "MONOCHROME2");
+            dataset.Add(DicomTag.PixelData, new byte[] { 0, 0, 0, 0 });
+            var dicomFile = new DicomFile(dataset);
+
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(
+                    new DicomWadoInstancesResponse(new List<DicomFile> { dicomFile })));
+
+            var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3",
+                acceptHeader: $"multipart/related; type=\"application/dicom\"; transfer-syntax={jpeg2kLossless}");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            // Without a JPEG-2000 codec registered, transcoding should fail → 406
+            Assert.Equal(StatusCodes.Status406NotAcceptable, context.Response.StatusCode);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // NegotiateInstanceFormat unit tests (parser level)
+        // ─────────────────────────────────────────────────────────────────────────
+
+        [FactForNetCore]
+        public void NegotiateInstanceFormat_NoAcceptHeader_ReturnsDefaultExplicitVrLe()
+        {
+            var context = BuildHttpContext(); // no Accept header
+            var result = WadoResponseWriter.NegotiateInstanceFormat(context);
+
+            Assert.True(result.IsAcceptable);
+            Assert.False(result.AcceptsAnyTransferSyntax);
+            Assert.Equal(DicomTransferSyntax.ExplicitVRLittleEndian, result.RequestedTransferSyntax);
+        }
+
+        [FactForNetCore]
+        public void NegotiateInstanceFormat_WildcardAccept_ReturnsDefaultExplicitVrLe()
+        {
+            var context = BuildHttpContext("*/*");
+            var result = WadoResponseWriter.NegotiateInstanceFormat(context);
+
+            Assert.True(result.IsAcceptable);
+            Assert.False(result.AcceptsAnyTransferSyntax);
+            Assert.Equal(DicomTransferSyntax.ExplicitVRLittleEndian, result.RequestedTransferSyntax);
+        }
+
+        [FactForNetCore]
+        public void NegotiateInstanceFormat_ApplicationDicomNoTs_ReturnsDefaultExplicitVrLe()
+        {
+            var context = BuildHttpContext("multipart/related; type=\"application/dicom\"");
+            var result = WadoResponseWriter.NegotiateInstanceFormat(context);
+
+            Assert.True(result.IsAcceptable);
+            Assert.False(result.AcceptsAnyTransferSyntax);
+            Assert.Equal(DicomTransferSyntax.ExplicitVRLittleEndian, result.RequestedTransferSyntax);
+        }
+
+        [FactForNetCore]
+        public void NegotiateInstanceFormat_TransferSyntaxWildcard_ReturnsAcceptsAny()
+        {
+            var context = BuildHttpContext("multipart/related; type=\"application/dicom\"; transfer-syntax=*");
+            var result = WadoResponseWriter.NegotiateInstanceFormat(context);
+
+            Assert.True(result.IsAcceptable);
+            Assert.True(result.AcceptsAnyTransferSyntax);
+            Assert.Null(result.RequestedTransferSyntax);
+        }
+
+        [FactForNetCore]
+        public void NegotiateInstanceFormat_ExplicitVrLeUid_ReturnsExplicitVrLe()
+        {
+            var context = BuildHttpContext(
+                "multipart/related; type=\"application/dicom\"; transfer-syntax=1.2.840.10008.1.2.1");
+            var result = WadoResponseWriter.NegotiateInstanceFormat(context);
+
+            Assert.True(result.IsAcceptable);
+            Assert.False(result.AcceptsAnyTransferSyntax);
+            Assert.Equal(DicomTransferSyntax.ExplicitVRLittleEndian, result.RequestedTransferSyntax);
+        }
+
+        [FactForNetCore]
+        public void NegotiateInstanceFormat_Jpeg2000LosslessUid_ReturnsJpeg2000Lossless()
+        {
+            const string jpeg2kLossless = "1.2.840.10008.1.2.4.90";
+            var context = BuildHttpContext(
+                $"multipart/related; type=\"application/dicom\"; transfer-syntax={jpeg2kLossless}");
+            var result = WadoResponseWriter.NegotiateInstanceFormat(context);
+
+            Assert.True(result.IsAcceptable);
+            Assert.False(result.AcceptsAnyTransferSyntax);
+            Assert.NotNull(result.RequestedTransferSyntax);
+            Assert.Equal(jpeg2kLossless, result.RequestedTransferSyntax!.UID.UID);
+        }
+
+        [FactForNetCore]
+        public void NegotiateInstanceFormat_UnsupportedMediaType_ReturnsNotAcceptable()
+        {
+            var context = BuildHttpContext("text/html");
+            var result = WadoResponseWriter.NegotiateInstanceFormat(context);
+
+            Assert.False(result.IsAcceptable);
+        }
+
+        [FactForNetCore]
+        public void NegotiateInstanceFormat_ImageJpegMediaType_ReturnsNotAcceptable()
+        {
+            var context = BuildHttpContext("image/jpeg");
+            var result = WadoResponseWriter.NegotiateInstanceFormat(context);
+
+            Assert.False(result.IsAcceptable);
+        }
+
+        [FactForNetCore]
+        public void NegotiateInstanceFormat_TransferSyntaxInQuotes_ParsedCorrectly()
+        {
+            var context = BuildHttpContext(
+                "multipart/related; type=\"application/dicom\"; transfer-syntax=\"1.2.840.10008.1.2.1\"");
+            var result = WadoResponseWriter.NegotiateInstanceFormat(context);
+
+            Assert.True(result.IsAcceptable);
+            Assert.Equal(DicomTransferSyntax.ExplicitVRLittleEndian, result.RequestedTransferSyntax);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
         // Helpers
         // ─────────────────────────────────────────────────────────────────────────
 
