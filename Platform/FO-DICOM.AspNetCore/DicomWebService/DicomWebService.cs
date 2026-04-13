@@ -95,21 +95,21 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         {
             var cancellationToken = context.RequestAborted;
             var (response, request) = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Study, context, cancellationToken);
-            await ResponseWriter.ExecuteAsync(context, response, request, cancellationToken);
+            await ResponseWriter.WriteAsync(context, response, request, cancellationToken);
         }
 
         public async Task HandleQidoSeriesRequestAsync(HttpContext context)
         {
             var cancellationToken = context.RequestAborted;
             var (response, request) = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Series, context, cancellationToken);
-            await ResponseWriter.ExecuteAsync(context, response, request, cancellationToken);
+            await ResponseWriter.WriteAsync(context, response, request, cancellationToken);
         }
 
         public async Task HandleQidoInstancesRequestAsync(HttpContext context)
         {
             var cancellationToken = context.RequestAborted;
             var (response, request) = await InnerHandleQidoRequestAsync(DicomQueryRetrieveLevel.Image, context, cancellationToken);
-            await ResponseWriter.ExecuteAsync(context, response, request, cancellationToken);
+            await ResponseWriter.WriteAsync(context, response, request, cancellationToken);
         }
 
         /// <summary>
@@ -179,7 +179,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             var response = await InnerHandleWadoRequestAsync<IDicomWadoInstanceResponse>(
                 wadoRequest, context, cancellationToken,
                 (provider, req, ctx, ct) => provider.OnRetrieveInstancesAsync(req, ctx, ct));
-            await WadoWriter.ExecuteInstancesAsync(context, response, cancellationToken);
+            await WadoWriter.WriteInstancesAsync(context, response, cancellationToken);
         }
 
         public async Task HandleWadoMetadataRequestAsync(HttpContext context)
@@ -189,7 +189,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             var response = await InnerHandleWadoRequestAsync<IDicomWadoMetadataResponse>(
                 wadoRequest, context, cancellationToken,
                 (provider, req, ctx, ct) => provider.OnRetrieveMetadataAsync(req, ctx, ct));
-            await WadoWriter.ExecuteMetadataAsync(context, response, cancellationToken);
+            await WadoWriter.WriteMetadataAsync(context, response, cancellationToken);
         }
 
         /// <summary>

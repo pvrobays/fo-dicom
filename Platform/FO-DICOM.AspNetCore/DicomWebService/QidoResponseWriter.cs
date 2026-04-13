@@ -72,7 +72,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// (in which case <paramref name="response"/> is a <see cref="DicomWebBadRequestResponse"/>).
         /// </param>
         /// <param name="cancellationToken">Propagated cancellation token.</param>
-        internal async Task ExecuteAsync(
+        internal async Task WriteAsync(
             HttpContext context,
             IDicomQidoResponse response,
             DicomQidoRequest? request,
@@ -89,12 +89,12 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     {
                         case QidoResponseFormat.Json:
                             context.Response.StatusCode = StatusCodes.Status200OK;
-                            await WriteJsonResponseAsync(context, successResponse.Results, cancellationToken);
+                            await WriteJsonAsync(context, successResponse.Results, cancellationToken);
                             break;
 
                         case QidoResponseFormat.Xml:
                             context.Response.StatusCode = StatusCodes.Status200OK;
-                            await WriteXmlMultipartResponseAsync(context, successResponse.Results, cancellationToken);
+                            await WriteXmlMultipartAsync(context, successResponse.Results, cancellationToken);
                             break;
 
                         case QidoResponseFormat.NotAcceptable:
@@ -232,7 +232,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// using <see cref="Utf8JsonWriter"/>, avoiding an intermediate string allocation.
         /// Each dataset is flushed immediately so the client receives data as it is produced.
         /// </summary>
-        private async Task WriteJsonResponseAsync(HttpContext context, IList<DicomDataset> results,
+        private async Task WriteJsonAsync(HttpContext context, IList<DicomDataset> results,
             CancellationToken cancellationToken)
         {
             context.Response.ContentType = "application/dicom+json";
@@ -259,7 +259,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// directly into the response body, flushing after each part instead of accumulating
         /// a full <c>StringBuilder</c> in memory.
         /// </summary>
-        private static async Task WriteXmlMultipartResponseAsync(HttpContext context, IList<DicomDataset> results,
+        private static async Task WriteXmlMultipartAsync(HttpContext context, IList<DicomDataset> results,
             CancellationToken cancellationToken)
         {
             var boundary = Guid.NewGuid().ToString("N");

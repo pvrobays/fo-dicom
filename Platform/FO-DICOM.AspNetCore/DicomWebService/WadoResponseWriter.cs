@@ -41,7 +41,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// Success responses are written as <c>multipart/related; type="application/dicom"</c>
         /// (PS3.18 Table 10.4.4-1). Failure responses are mapped to the appropriate HTTP status.
         /// </summary>
-        internal async Task ExecuteInstancesAsync(
+        internal async Task WriteInstancesAsync(
             HttpContext context,
             IDicomWadoInstanceResponse response,
             CancellationToken cancellationToken)
@@ -49,25 +49,25 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             switch (response)
             {
                 case DicomWadoInstancesResponse instancesResponse:
-                    await WriteMultipartDicomResponseAsync(context,
+                    await WriteDicomMultipartAsync(context,
                         EnumerateFilesAsync(instancesResponse.Results), cancellationToken);
                     break;
 
                 case DicomWadoRawInstancesResponse rawResponse:
-                    await WriteMultipartRawResponseAsync(context,
+                    await WriteRawMultipartAsync(context,
                         EnumerateRawAsync(rawResponse.Results), cancellationToken);
                     break;
 
                 case DicomWadoAsyncInstancesResponse asyncResponse:
-                    await WriteMultipartDicomResponseAsync(context, asyncResponse.Results, cancellationToken);
+                    await WriteDicomMultipartAsync(context, asyncResponse.Results, cancellationToken);
                     break;
 
                 case DicomWadoAsyncRawInstancesResponse asyncRawResponse:
-                    await WriteMultipartRawResponseAsync(context, asyncRawResponse.Results, cancellationToken);
+                    await WriteRawMultipartAsync(context, asyncRawResponse.Results, cancellationToken);
                     break;
 
                 default:
-                    await WriteFailureResponseAsync(context, response, cancellationToken);
+                    await WriteFailureAsync(context, response, cancellationToken);
                     break;
             }
         }
@@ -80,7 +80,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// <c>application/dicom+json</c> (default) or
         /// <c>multipart/related; type="application/dicom+xml"</c> (PS3.18 Table 10.4.4-1).
         /// </summary>
-        internal async Task ExecuteMetadataAsync(
+        internal async Task WriteMetadataAsync(
             HttpContext context,
             IDicomWadoMetadataResponse response,
             CancellationToken cancellationToken)
@@ -88,7 +88,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             switch (response)
             {
                 case DicomWadoMetadataResponse metadataResponse:
-                    await WriteMetadataAsync(context, metadataResponse.Results, cancellationToken);
+                    await WriteMetadataListAsync(context, metadataResponse.Results, cancellationToken);
                     break;
 
                 case DicomWadoAsyncMetadataResponse asyncMetadataResponse:
@@ -115,7 +115,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     break;
 
                 default:
-                    await WriteFailureResponseAsync(context, response, cancellationToken);
+                    await WriteFailureAsync(context, response, cancellationToken);
                     break;
             }
         }
@@ -131,7 +131,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
         // ── Multipart DICOM instance writing ─────────────────────────────────
 
-        private static async Task WriteMultipartDicomResponseAsync(
+        private static async Task WriteDicomMultipartAsync(
             HttpContext context,
             IAsyncEnumerable<DicomFile> files,
             CancellationToken cancellationToken)
@@ -161,7 +161,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             await context.Response.WriteAsync($"--{boundary}--\r\n", cancellationToken);
         }
 
-        private static async Task WriteMultipartRawResponseAsync(
+        private static async Task WriteRawMultipartAsync(
             HttpContext context,
             IAsyncEnumerable<DicomWadoRawInstance> parts,
             CancellationToken cancellationToken)
@@ -195,7 +195,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
         // ── Metadata writing ──────────────────────────────────────────────────
 
-        private async Task WriteMetadataAsync(
+        private async Task WriteMetadataListAsync(
             HttpContext context,
             IList<DicomDataset> datasets,
             CancellationToken cancellationToken)
@@ -354,7 +354,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
         // ── Failure response mapping ──────────────────────────────────────────
 
-        private static async Task WriteFailureResponseAsync(
+        private static async Task WriteFailureAsync(
             HttpContext context,
             IDicomWadoResponse response,
             CancellationToken cancellationToken)
