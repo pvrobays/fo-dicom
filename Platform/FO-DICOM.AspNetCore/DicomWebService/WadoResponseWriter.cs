@@ -652,6 +652,119 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             }
         }
 
+        // ── Frame retrieval ───────────────────────────────────────────────────
+
+        /// <summary>
+        /// Parses the HTTP <c>Accept</c> header to determine the requested media type
+        /// for a WADO-RS frame retrieval request (PS3.18 Section 10.4.1.1.4).
+        /// <list type="bullet">
+        ///   <item>Missing / empty / <c>*/*</c> → <c>application/octet-stream</c> (PS3.18 default)</item>
+        ///   <item><c>multipart/related; type="application/octet-stream"</c> → uncompressed raw pixels</item>
+        ///   <item><c>multipart/related; type="image/jpeg"</c> → JPEG-compressed frames</item>
+        ///   <item><c>multipart/related; type="image/jp2"</c> → JPEG 2000 frames</item>
+        ///   <item><c>multipart/related; type="image/x-jls"</c> → JPEG-LS frames</item>
+        ///   <item><c>multipart/related; type="image/jphc"</c> → HTJ2K frames</item>
+        ///   <item><c>multipart/related; type="image/dicom-rle"</c> → RLE frames</item>
+        ///   <item><c>multipart/related; type="video/mpeg2"</c> → MPEG-2 video</item>
+        ///   <item><c>multipart/related; type="video/mp4"</c> → MPEG-4 / H.264 / H.265 video</item>
+        ///   <item>Any other media type → 406 Not Acceptable</item>
+        /// </list>
+        /// </summary>
+        internal static WadoFrameNegotiationResult NegotiateFrameFormat(HttpContext context)
+        {
+            var acceptHeader = context.Request.Headers["Accept"].ToString();
+
+            // Missing / empty or wildcard → PS3.18 default (uncompressed octet-stream)
+            if (string.IsNullOrWhiteSpace(acceptHeader) || acceptHeader.Contains("*/*"))
+            {
+                return WadoFrameNegotiationResult.Default;
+            }
+
+            // Extract the type= parameter value from a multipart/related Accept header.
+            // E.g. from: multipart/related; type="image/jpeg"
+            // extract:   image/jpeg
+            const string typeParam = "type=";
+            int typeIdx = acceptHeader.IndexOf(typeParam, StringComparison.OrdinalIgnoreCase);
+            if (typeIdx >= 0)
+            {
+                int valueStart = typeIdx + typeParam.Length;
+                bool quoted = valueStart < acceptHeader.Length && acceptHeader[valueStart] == '"';
+                if (quoted) valueStart++;
+
+                int valueEnd = valueStart;
+                while (valueEnd < acceptHeader.Length)
+                {
+                    char c = acceptHeader[valueEnd];
+                    if (quoted ? c == '"' : (c == ';' || c == ',' || c == ' ' || c == '\t'))
+                    {
+                        break;
+                    }
+                    valueEnd++;
+                }
+
+                var mediaType = acceptHeader.Substring(valueStart, valueEnd - valueStart).Trim().ToLowerInvariant();
+                if (DicomMediaTypeMap.IsKnownFrameMimeType(mediaType))
+                {
+                    return new WadoFrameNegotiationResult(true, mediaType);
+                }
+
+                return WadoFrameNegotiationResult.NotAcceptable;
+            }
+
+            // No type= parameter found — check if the whole Accept value is a bare known MIME type
+            var bare = acceptHeader.Trim().ToLowerInvariant();
+            if (DicomMediaTypeMap.IsKnownFrameMimeType(bare))
+            {
+                return new WadoFrameNegotiationResult(true, bare);
+            }
+
+            return WadoFrameNegotiationResult.NotAcceptable;
+        }
+
+        /// <summary>
+        /// Writes the HTTP response for a WADO-RS frame retrieval request.
+        /// Success responses are written as
+        /// <c>multipart/related; type="&lt;mediaType&gt;"</c> with one part per requested frame
+        /// (PS3.18 Section 10.4.1.1.4).
+        /// </summary>
+        internal async Task WriteFramesAsync(
+            HttpContext context,
+            IDicomWadoFrameResponse response,
+            WadoFrameNegotiationResult negotiation,
+            CancellationToken cancellationToken)
+        {
+            if (response is DicomWadoFramesResponse framesResponse)
+            {
+                var mediaType = negotiation.MediaType ?? DicomMediaTypeMap.OctetStream;
+                var boundary = $"----dicom-boundary-{Guid.NewGuid():N}";
+                context.Response.StatusCode = StatusCodes.Status200OK;
+                context.Response.ContentType =
+                    $"multipart/related; type=\"{mediaType}\"; boundary={boundary}";
+
+                foreach (var frame in framesResponse.Results)
+                {
+                    await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
+                    await context.Response.WriteAsync(
+                        $"Content-Type: {frame.MediaType}\r\n", cancellationToken);
+                    await context.Response.WriteAsync("\r\n", cancellationToken);
+                    await frame.Data.CopyToStreamAsync(context.Response.Body, cancellationToken);
+                    await context.Response.WriteAsync("\r\n", cancellationToken);
+                }
+
+                await context.Response.WriteAsync($"--{boundary}--\r\n", cancellationToken);
+                return;
+            }
+
+            if (response is DicomWebFailureResponse failureResponse)
+            {
+                await DicomWebFailureWriter.WriteAsync(context, failureResponse, cancellationToken);
+                return;
+            }
+
+            throw new ArgumentOutOfRangeException(nameof(response),
+                $"Unrecognised WADO frame response type: {response?.GetType().Name}");
+        }
+
         // ── Failure response mapping ──────────────────────────────────────────
 
         private static Task WriteFailureAsync(
@@ -687,5 +800,39 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             }
         }
 #pragma warning restore CS1998
+    }
+
+    // ── Frame content negotiation result ─────────────────────────────────────
+
+    /// <summary>
+    /// The result of <c>Accept</c> header negotiation for a WADO-RS frame retrieval request.
+    /// </summary>
+    internal readonly struct WadoFrameNegotiationResult
+    {
+        /// <summary>
+        /// <c>false</c> when none of the client's acceptable media types are supported;
+        /// the service should return HTTP 406 Not Acceptable.
+        /// </summary>
+        internal bool IsAcceptable { get; }
+
+        /// <summary>
+        /// The negotiated MIME type for the frame parts (e.g. <c>"application/octet-stream"</c>,
+        /// <c>"image/jpeg"</c>), or <c>null</c> when <see cref="IsAcceptable"/> is <c>false</c>.
+        /// </summary>
+        internal string? MediaType { get; }
+
+        internal WadoFrameNegotiationResult(bool isAcceptable, string? mediaType)
+        {
+            IsAcceptable = isAcceptable;
+            MediaType = mediaType;
+        }
+
+        /// <summary>A pre-built result for HTTP 406 Not Acceptable.</summary>
+        internal static WadoFrameNegotiationResult NotAcceptable
+            => new WadoFrameNegotiationResult(false, null);
+
+        /// <summary>A pre-built result for the default frame format (uncompressed octet-stream).</summary>
+        internal static WadoFrameNegotiationResult Default
+            => new WadoFrameNegotiationResult(true, DicomMediaTypeMap.OctetStream);
     }
 }
