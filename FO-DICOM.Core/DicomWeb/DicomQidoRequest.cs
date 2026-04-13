@@ -168,8 +168,8 @@ namespace FellowOakDicom.DicomWeb
             req.Dataset.AddOrUpdate(DicomTag.ModalitiesInStudy, modalitiesInStudy);
             req.Dataset.AddOrUpdate(DicomTag.StudyID, studyId);
             req.Dataset.AddOrUpdate(DicomTag.AccessionNumber, accession);
-            req.Dataset.AddOrUpdate<DicomDateRange>(DicomTag.StudyDate, studyDateTime);
-            req.Dataset.AddOrUpdate<DicomDateRange>(DicomTag.StudyTime, studyDateTime);
+            req.Dataset.AddOrUpdate<DicomDateRange>(DicomTag.StudyDate, studyDateTime!);
+            req.Dataset.AddOrUpdate<DicomDateRange>(DicomTag.StudyTime, studyDateTime!);
             // req.Dataset.AddOrUpdate(DicomTag.StudyDescription, string.Empty); //Not according to QIDO standard
             req.Dataset.AddOrUpdate(DicomTag.NumberOfStudyRelatedSeries, string.Empty);
             req.Dataset.AddOrUpdate(DicomTag.NumberOfStudyRelatedInstances, string.Empty);

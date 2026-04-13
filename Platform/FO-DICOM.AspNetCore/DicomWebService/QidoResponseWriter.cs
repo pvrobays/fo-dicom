@@ -1,6 +1,5 @@
 // Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
-#nullable disable
 
 using FellowOakDicom.DicomWeb;
 using FellowOakDicom.Serialization;
@@ -76,7 +75,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         internal async Task ExecuteAsync(
             HttpContext context,
             IDicomQidoResponse response,
-            DicomQidoRequest request,
+            DicomQidoRequest? request,
             CancellationToken cancellationToken)
         {
             switch (response)
@@ -211,7 +210,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// </list>
         /// </summary>
         private void EmitWarningHeaders(HttpContext context, DicomQidoSuccessResponse successResponse,
-            DicomQidoRequest request)
+            DicomQidoRequest? request)
         {
             // PS3.18 Section 8.3.4 / RFC 7234 §5.5: fuzzy matching not supported
             if (request != null && request.Options.IsFuzzyMatching && !successResponse.IsFuzzyMatchingSupported)

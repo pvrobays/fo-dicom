@@ -55,7 +55,7 @@ namespace FellowOakDicom.DicomWeb
     [Obsolete("Use DicomWebBadRequestResponse instead.")]
     public class DicomQidoBadRequestResponse : DicomWebBadRequestResponse
     {
-        public DicomQidoBadRequestResponse(string reason = null) : base(reason) { }
+        public DicomQidoBadRequestResponse(string? reason = null) : base(reason) { }
     }
 
     /// <inheritdoc cref="DicomWebUnauthorizedResponse"/>
@@ -70,7 +70,7 @@ namespace FellowOakDicom.DicomWeb
     [Obsolete("Use DicomWebUnavailableResponse instead.")]
     public class DicomQidoUnavailableResponse : DicomWebUnavailableResponse
     {
-        public DicomQidoUnavailableResponse(string reason = null) : base(reason) { }
+        public DicomQidoUnavailableResponse(string? reason = null) : base(reason) { }
     }
 
     /// <inheritdoc cref="DicomWebNotImplementedResponse"/>

@@ -16,9 +16,9 @@ namespace FellowOakDicom.DicomWeb
     public class DicomWebBadRequestResponse : DicomWebFailureResponse
     {
         /// <summary>An optional human-readable description of why the request was rejected.</summary>
-        public string Reason { get; }
+        public string? Reason { get; }
 
-        public DicomWebBadRequestResponse(string reason = null)
+        public DicomWebBadRequestResponse(string? reason = null)
         {
             Reason = reason;
         }
@@ -40,9 +40,9 @@ namespace FellowOakDicom.DicomWeb
     public class DicomWebNotFoundResponse : DicomWebFailureResponse
     {
         /// <summary>An optional human-readable description of what was not found.</summary>
-        public string Reason { get; }
+        public string? Reason { get; }
 
-        public DicomWebNotFoundResponse(string reason = null)
+        public DicomWebNotFoundResponse(string? reason = null)
         {
             Reason = reason;
         }
@@ -59,9 +59,9 @@ namespace FellowOakDicom.DicomWeb
     public class DicomWebUnavailableResponse : DicomWebFailureResponse
     {
         /// <summary>An optional human-readable description of the unavailability reason.</summary>
-        public string Reason { get; }
+        public string? Reason { get; }
 
-        public DicomWebUnavailableResponse(string reason = null)
+        public DicomWebUnavailableResponse(string? reason = null)
         {
             Reason = reason;
         }

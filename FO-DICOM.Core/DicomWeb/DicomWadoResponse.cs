@@ -48,9 +48,9 @@ namespace FellowOakDicom.DicomWeb
         /// for Explicit VR Little Endian), included in the part's <c>Content-Type</c> parameter.
         /// May be <c>null</c> if the transfer syntax is unknown or not relevant.
         /// </summary>
-        public string TransferSyntaxUid { get; }
+        public string? TransferSyntaxUid { get; }
 
-        public DicomWadoRawInstance(Stream data, string transferSyntaxUid = null)
+        public DicomWadoRawInstance(Stream data, string? transferSyntaxUid = null)
         {
             Data = data;
             TransferSyntaxUid = transferSyntaxUid;

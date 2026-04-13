@@ -1,6 +1,5 @@
 // Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
-#nullable disable
 
 using FellowOakDicom.DicomWeb;
 using FellowOakDicom.Network;
@@ -16,8 +15,8 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
     public abstract class DicomWebService : IDicomWebService
     {
         private readonly ILogger _logger;
-        private QidoResponseWriter _responseWriter;
-        private WadoResponseWriter _wadoResponseWriter;
+        private QidoResponseWriter? _responseWriter;
+        private WadoResponseWriter? _wadoResponseWriter;
 
         /// <summary>
         /// Initializes the service with an optional <see cref="ILoggerFactory"/>.
@@ -25,10 +24,10 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// no-arg constructor on a concrete subclass) a <see cref="NullLoggerFactory"/> is used
         /// so that no logging occurs but no <see cref="NullReferenceException"/> is thrown.
         /// </summary>
-        protected DicomWebService(ILoggerFactory loggerFactory = null)
+        protected DicomWebService(ILoggerFactory? loggerFactory = null)
         {
             _logger = (loggerFactory ?? NullLoggerFactory.Instance)
-                .CreateLogger(GetType().FullName);
+                .CreateLogger(GetType().FullName ?? GetType().Name);
         }
 
         /// <summary>
@@ -122,7 +121,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// (the response will be a <see cref="DicomWebBadRequestResponse"/> in that case).
         /// </para>
         /// </summary>
-        private async Task<(IDicomQidoResponse response, DicomQidoRequest request)> InnerHandleQidoRequestAsync(
+        private async Task<(IDicomQidoResponse response, DicomQidoRequest? request)> InnerHandleQidoRequestAsync(
             DicomQueryRetrieveLevel level, HttpContext context, CancellationToken cancellationToken)
         {
             if (!(this is IDicomQidoProvider thisAsQidoProvider))
@@ -199,7 +198,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// </summary>
         private static DicomWadoRequest BuildWadoRequest(HttpContext context)
         {
-            var studyUid = RouteUidHelper.GetRouteUid(context, "studyInstanceUID");
+            var studyUid = RouteUidHelper.GetRouteUid(context, "studyInstanceUID") ?? string.Empty;
             var seriesUid = RouteUidHelper.GetRouteUid(context, "seriesInstanceUID");
             var sopUid = RouteUidHelper.GetRouteUid(context, "sopInstanceUID");
             return new DicomWadoRequest(studyUid, seriesUid, sopUid);

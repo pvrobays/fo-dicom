@@ -1,6 +1,5 @@
 // Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
-#nullable disable
 
 using FellowOakDicom.DicomWeb;
 using Microsoft.AspNetCore.Http;

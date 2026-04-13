@@ -17,12 +17,12 @@ namespace FellowOakDicom.DicomWeb
         /// <summary>
         /// The Series Instance UID from the request URL, or <c>null</c> for study-level requests.
         /// </summary>
-        public string SeriesInstanceUid { get; }
+        public string? SeriesInstanceUid { get; }
 
         /// <summary>
         /// The SOP Instance UID from the request URL, or <c>null</c> for study- or series-level requests.
         /// </summary>
-        public string SopInstanceUid { get; }
+        public string? SopInstanceUid { get; }
 
         /// <summary>
         /// Constructs a WADO-RS request for the given UID scope.
@@ -30,7 +30,7 @@ namespace FellowOakDicom.DicomWeb
         /// <param name="studyInstanceUid">Study Instance UID (required).</param>
         /// <param name="seriesInstanceUid">Series Instance UID, or <c>null</c> for study-level scope.</param>
         /// <param name="sopInstanceUid">SOP Instance UID, or <c>null</c> for study/series-level scope.</param>
-        public DicomWadoRequest(string studyInstanceUid, string seriesInstanceUid = null, string sopInstanceUid = null)
+        public DicomWadoRequest(string studyInstanceUid, string? seriesInstanceUid = null, string? sopInstanceUid = null)
         {
             StudyInstanceUid = studyInstanceUid;
             SeriesInstanceUid = seriesInstanceUid;
