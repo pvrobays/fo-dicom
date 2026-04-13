@@ -31,22 +31,22 @@ namespace FellowOakDicom.Tests.DicomWeb
         /// </summary>
         private class TestWadoService : DicomWebService, IDicomWadoProvider
         {
-            private readonly Func<DicomWadoRequest, CancellationToken, Task<IDicomWadoResponse>> _instancesHandler;
-            private readonly Func<DicomWadoRequest, CancellationToken, Task<IDicomWadoResponse>> _metadataHandler;
+            private readonly Func<DicomWadoRequest, CancellationToken, Task<IDicomWadoInstanceResponse>> _instancesHandler;
+            private readonly Func<DicomWadoRequest, CancellationToken, Task<IDicomWadoMetadataResponse>> _metadataHandler;
 
             public TestWadoService(
-                Func<DicomWadoRequest, CancellationToken, Task<IDicomWadoResponse>> instancesHandler,
-                Func<DicomWadoRequest, CancellationToken, Task<IDicomWadoResponse>> metadataHandler = null)
+                Func<DicomWadoRequest, CancellationToken, Task<IDicomWadoInstanceResponse>> instancesHandler,
+                Func<DicomWadoRequest, CancellationToken, Task<IDicomWadoMetadataResponse>> metadataHandler = null)
             {
                 _instancesHandler = instancesHandler;
                 _metadataHandler = metadataHandler
-                    ?? ((req, ct) => Task.FromResult<IDicomWadoResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>())));
+                    ?? ((req, ct) => Task.FromResult<IDicomWadoMetadataResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>())));
             }
 
-            public Task<IDicomWadoResponse> OnRetrieveInstancesAsync(DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+            public Task<IDicomWadoInstanceResponse> OnRetrieveInstancesAsync(DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
                 => _instancesHandler(request, cancellationToken);
 
-            public Task<IDicomWadoResponse> OnRetrieveMetadataAsync(DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+            public Task<IDicomWadoMetadataResponse> OnRetrieveMetadataAsync(DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
                 => _metadataHandler(request, cancellationToken);
         }
 
@@ -136,7 +136,7 @@ namespace FellowOakDicom.Tests.DicomWeb
             var service = new TestWadoService((req, ct) =>
             {
                 captured = req;
-                return Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
+                return Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
             });
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
@@ -155,7 +155,7 @@ namespace FellowOakDicom.Tests.DicomWeb
             var service = new TestWadoService((req, ct) =>
             {
                 captured = req;
-                return Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
+                return Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
             });
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3", seriesUid: "4.5.6");
@@ -174,7 +174,7 @@ namespace FellowOakDicom.Tests.DicomWeb
             var service = new TestWadoService((req, ct) =>
             {
                 captured = req;
-                return Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
+                return Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
             });
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3", seriesUid: "4.5.6", sopUid: "7.8.9");
@@ -191,11 +191,11 @@ namespace FellowOakDicom.Tests.DicomWeb
         {
             DicomWadoRequest captured = null;
             var service = new TestWadoService(
-                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
+                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
                 metadataHandler: (req, ct) =>
                 {
                     captured = req;
-                    return Task.FromResult<IDicomWadoResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>()));
+                    return Task.FromResult<IDicomWadoMetadataResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>()));
                 });
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3", seriesUid: "4.5.6");
@@ -214,7 +214,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         public async Task HandleWadoInstancesRequest_EmptyDicomFileList_Returns200WithMultipartDicom()
         {
             var service = new TestWadoService((req, ct) =>
-                Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())));
+                Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
             await service.HandleWadoInstancesRequestAsync(context);
@@ -236,7 +236,7 @@ namespace FellowOakDicom.Tests.DicomWeb
             var dicomFile = new DicomFile(dataset);
 
             var service = new TestWadoService((req, ct) =>
-                Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile> { dicomFile })));
+                Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile> { dicomFile })));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
             await service.HandleWadoInstancesRequestAsync(context);
@@ -261,7 +261,7 @@ namespace FellowOakDicom.Tests.DicomWeb
             var response = new DicomWadoRawInstancesResponse(new List<DicomWadoRawInstance> { rawInstance });
 
             var service = new TestWadoService((req, ct) =>
-                Task.FromResult<IDicomWadoResponse>(response));
+                Task.FromResult<IDicomWadoInstanceResponse>(response));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
             await service.HandleWadoInstancesRequestAsync(context);
@@ -280,7 +280,7 @@ namespace FellowOakDicom.Tests.DicomWeb
             var response = new DicomWadoRawInstancesResponse(new List<DicomWadoRawInstance> { rawInstance });
 
             var service = new TestWadoService((req, ct) =>
-                Task.FromResult<IDicomWadoResponse>(response));
+                Task.FromResult<IDicomWadoInstanceResponse>(response));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
             await service.HandleWadoInstancesRequestAsync(context);
@@ -305,7 +305,7 @@ namespace FellowOakDicom.Tests.DicomWeb
             var dicomFile = new DicomFile(dataset);
 
             var service = new TestWadoService((req, ct) =>
-                Task.FromResult<IDicomWadoResponse>(
+                Task.FromResult<IDicomWadoInstanceResponse>(
                     new DicomWadoAsyncInstancesResponse(SingleItemAsync(dicomFile))));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
@@ -322,7 +322,7 @@ namespace FellowOakDicom.Tests.DicomWeb
                 new MemoryStream(Encoding.ASCII.GetBytes("raw")), "1.2.840.10008.1.2.1");
 
             var service = new TestWadoService((req, ct) =>
-                Task.FromResult<IDicomWadoResponse>(
+                Task.FromResult<IDicomWadoInstanceResponse>(
                     new DicomWadoAsyncRawInstancesResponse(SingleItemAsync(rawInstance))));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
@@ -340,8 +340,8 @@ namespace FellowOakDicom.Tests.DicomWeb
         public async Task HandleWadoMetadataRequest_EmptyDatasets_Returns200WithJsonArray()
         {
             var service = new TestWadoService(
-                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
-                metadataHandler: (req, ct) => Task.FromResult<IDicomWadoResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>())));
+                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
+                metadataHandler: (req, ct) => Task.FromResult<IDicomWadoMetadataResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>())));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
             await service.HandleWadoMetadataRequestAsync(context);
@@ -362,8 +362,8 @@ namespace FellowOakDicom.Tests.DicomWeb
             dataset.Add(DicomTag.PatientID, "P001");
 
             var service = new TestWadoService(
-                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
-                metadataHandler: (req, ct) => Task.FromResult<IDicomWadoResponse>(
+                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
+                metadataHandler: (req, ct) => Task.FromResult<IDicomWadoMetadataResponse>(
                     new DicomWadoMetadataResponse(new List<DicomDataset> { dataset })));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
@@ -386,8 +386,8 @@ namespace FellowOakDicom.Tests.DicomWeb
             dataset.Add(DicomTag.SOPInstanceUID, DicomUID.Generate());
 
             var service = new TestWadoService(
-                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
-                metadataHandler: (req, ct) => Task.FromResult<IDicomWadoResponse>(
+                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
+                metadataHandler: (req, ct) => Task.FromResult<IDicomWadoMetadataResponse>(
                     new DicomWadoMetadataResponse(new List<DicomDataset> { dataset })));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3",
@@ -411,8 +411,8 @@ namespace FellowOakDicom.Tests.DicomWeb
             dataset.Add(DicomTag.PatientID, "A001");
 
             var service = new TestWadoService(
-                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
-                metadataHandler: (req, ct) => Task.FromResult<IDicomWadoResponse>(
+                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
+                metadataHandler: (req, ct) => Task.FromResult<IDicomWadoMetadataResponse>(
                     new DicomWadoAsyncMetadataResponse(SingleItemAsync(dataset))));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
@@ -433,8 +433,8 @@ namespace FellowOakDicom.Tests.DicomWeb
         public async Task HandleWadoMetadataRequest_UnsupportedAcceptHeader_Returns406()
         {
             var service = new TestWadoService(
-                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
-                metadataHandler: (req, ct) => Task.FromResult<IDicomWadoResponse>(
+                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
+                metadataHandler: (req, ct) => Task.FromResult<IDicomWadoMetadataResponse>(
                     new DicomWadoMetadataResponse(new List<DicomDataset>())));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3",
@@ -452,7 +452,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         public async Task HandleWadoInstancesRequest_NotFoundResponse_Returns404()
         {
             var service = new TestWadoService((req, ct) =>
-                Task.FromResult<IDicomWadoResponse>(new DicomWebNotFoundResponse("study not found")));
+                Task.FromResult<IDicomWadoInstanceResponse>(new DicomWebNotFoundResponse("study not found")));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
             await service.HandleWadoInstancesRequestAsync(context);
@@ -466,7 +466,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         public async Task HandleWadoInstancesRequest_ForbiddenResponse_Returns403()
         {
             var service = new TestWadoService((req, ct) =>
-                Task.FromResult<IDicomWadoResponse>(new DicomWebForbiddenResponse()));
+                Task.FromResult<IDicomWadoInstanceResponse>(new DicomWebForbiddenResponse()));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
             await service.HandleWadoInstancesRequestAsync(context);
@@ -478,7 +478,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         public async Task HandleWadoInstancesRequest_UnauthorizedResponse_Returns401()
         {
             var service = new TestWadoService((req, ct) =>
-                Task.FromResult<IDicomWadoResponse>(new DicomWebUnauthorizedResponse()));
+                Task.FromResult<IDicomWadoInstanceResponse>(new DicomWebUnauthorizedResponse()));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
             await service.HandleWadoInstancesRequestAsync(context);
@@ -490,7 +490,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         public async Task HandleWadoInstancesRequest_BadRequestResponse_Returns400()
         {
             var service = new TestWadoService((req, ct) =>
-                Task.FromResult<IDicomWadoResponse>(new DicomWebBadRequestResponse("invalid uid")));
+                Task.FromResult<IDicomWadoInstanceResponse>(new DicomWebBadRequestResponse("invalid uid")));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
             await service.HandleWadoInstancesRequestAsync(context);
@@ -504,7 +504,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         public async Task HandleWadoInstancesRequest_UnavailableResponse_Returns503()
         {
             var service = new TestWadoService((req, ct) =>
-                Task.FromResult<IDicomWadoResponse>(new DicomWebUnavailableResponse("temporarily down")));
+                Task.FromResult<IDicomWadoInstanceResponse>(new DicomWebUnavailableResponse("temporarily down")));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
             await service.HandleWadoInstancesRequestAsync(context);
@@ -516,8 +516,8 @@ namespace FellowOakDicom.Tests.DicomWeb
         public async Task HandleWadoMetadataRequest_NotFoundResponse_Returns404()
         {
             var service = new TestWadoService(
-                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
-                metadataHandler: (req, ct) => Task.FromResult<IDicomWadoResponse>(new DicomWebNotFoundResponse()));
+                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
+                metadataHandler: (req, ct) => Task.FromResult<IDicomWadoMetadataResponse>(new DicomWebNotFoundResponse()));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
             await service.HandleWadoMetadataRequestAsync(context);
@@ -545,7 +545,7 @@ namespace FellowOakDicom.Tests.DicomWeb
         public async Task HandleWadoMetadataRequest_ProviderThrows_Returns503()
         {
             var service = new TestWadoService(
-                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
+                instancesHandler: (req, ct) => Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>())),
                 metadataHandler: (req, ct) => throw new InvalidOperationException("db down"));
 
             var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
@@ -566,11 +566,11 @@ namespace FellowOakDicom.Tests.DicomWeb
             public Task<IDicomQidoResponse> OnQidoRequestAsync(DicomQidoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
                 => Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
 
-            public Task<IDicomWadoResponse> OnRetrieveInstancesAsync(DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
-                => Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
+            public Task<IDicomWadoInstanceResponse> OnRetrieveInstancesAsync(DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+                => Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
 
-            public Task<IDicomWadoResponse> OnRetrieveMetadataAsync(DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
-                => Task.FromResult<IDicomWadoResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>()));
+            public Task<IDicomWadoMetadataResponse> OnRetrieveMetadataAsync(DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+                => Task.FromResult<IDicomWadoMetadataResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>()));
         }
 
         [FactForNetCore]

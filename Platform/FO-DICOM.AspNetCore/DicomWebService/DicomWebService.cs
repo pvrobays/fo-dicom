@@ -176,7 +176,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         {
             var cancellationToken = context.RequestAborted;
             var wadoRequest = BuildWadoRequest(context);
-            var response = await InnerHandleWadoRequestAsync(
+            var response = await InnerHandleWadoRequestAsync<IDicomWadoInstanceResponse>(
                 wadoRequest, context, cancellationToken,
                 (provider, req, ctx, ct) => provider.OnRetrieveInstancesAsync(req, ctx, ct));
             await WadoWriter.ExecuteInstancesAsync(context, response, cancellationToken);
@@ -186,7 +186,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         {
             var cancellationToken = context.RequestAborted;
             var wadoRequest = BuildWadoRequest(context);
-            var response = await InnerHandleWadoRequestAsync(
+            var response = await InnerHandleWadoRequestAsync<IDicomWadoMetadataResponse>(
                 wadoRequest, context, cancellationToken,
                 (provider, req, ctx, ct) => provider.OnRetrieveMetadataAsync(req, ctx, ct));
             await WadoWriter.ExecuteMetadataAsync(context, response, cancellationToken);
@@ -206,20 +206,23 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// <summary>
         /// Checks that an <see cref="IDicomWadoProvider"/> is implemented, then delegates to the
         /// appropriate provider method. Returns a failure response on missing provider or exception.
+        /// <typeparamref name="TResponse"/> is either <see cref="IDicomWadoInstanceResponse"/> or
+        /// <see cref="IDicomWadoMetadataResponse"/>, giving each call-site compile-time type safety.
         /// The <paramref name="operationName"/> is captured automatically from the calling method
         /// name via <see cref="CallerMemberNameAttribute"/> and used only for log messages.
         /// </summary>
-        private async Task<IDicomWadoResponse> InnerHandleWadoRequestAsync(
+        private async Task<TResponse> InnerHandleWadoRequestAsync<TResponse>(
             DicomWadoRequest request,
             HttpContext context,
             CancellationToken cancellationToken,
-            Func<IDicomWadoProvider, DicomWadoRequest, HttpContext, CancellationToken, Task<IDicomWadoResponse>> invoke,
+            Func<IDicomWadoProvider, DicomWadoRequest, HttpContext, CancellationToken, Task<TResponse>> invoke,
             [CallerMemberName] string operationName = "")
+            where TResponse : IDicomWadoResponse
         {
             if (!(this is IDicomWadoProvider thisAsWadoProvider))
             {
                 _logger.LogDebug("WADO {Operation} request received but no IDicomWadoProvider is implemented — returning 501", operationName);
-                return new DicomWebNotImplementedResponse();
+                return (TResponse)(IDicomWadoResponse)new DicomWebNotImplementedResponse();
             }
 
             try
@@ -229,7 +232,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             catch (Exception e)
             {
                 _logger.LogError(e, "WADO {Operation} request failed: unhandled exception in provider", operationName);
-                return new DicomWebUnavailableResponse(e.Message);
+                return (TResponse)(IDicomWadoResponse)new DicomWebUnavailableResponse(e.Message);
             }
         }
     }

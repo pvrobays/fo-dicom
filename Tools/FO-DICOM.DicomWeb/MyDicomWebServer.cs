@@ -56,7 +56,7 @@ namespace FellowOakDicom.DicomWeb
 
         // ── WADO-RS: Instance Retrieval ────────────────────────────────────────────
 
-        public Task<IDicomWadoResponse> OnRetrieveInstancesAsync(
+        public Task<IDicomWadoInstanceResponse> OnRetrieveInstancesAsync(
             DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
         {
             // TODO: Look up instances from storage by request.StudyInstanceUid,
@@ -75,13 +75,13 @@ namespace FellowOakDicom.DicomWeb
             //       _store.StreamInstancesAsync(request, cancellationToken));
 
             // For the demo, return an empty multipart response (no files stored).
-            IDicomWadoResponse response = new DicomWadoInstancesResponse(new List<DicomFile>());
+            IDicomWadoInstanceResponse response = new DicomWadoInstancesResponse(new List<DicomFile>());
             return Task.FromResult(response);
         }
 
         // ── WADO-RS: Metadata Retrieval ────────────────────────────────────────────
 
-        public Task<IDicomWadoResponse> OnRetrieveMetadataAsync(
+        public Task<IDicomWadoMetadataResponse> OnRetrieveMetadataAsync(
             DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
         {
             // TODO: Look up metadata (DICOM datasets without pixel data) from storage.
@@ -105,7 +105,7 @@ namespace FellowOakDicom.DicomWeb
             dataset.Add(DicomTag.PatientName, $"{_faker.Name.LastName()}^{_faker.Name.FirstName()}");
             dataset.Add(DicomTag.Modality, _faker.PickRandom("CT", "MR", "US", "XR", "PT"));
 
-            IDicomWadoResponse response = new DicomWadoMetadataResponse(new List<DicomDataset> { dataset });
+            IDicomWadoMetadataResponse response = new DicomWadoMetadataResponse(new List<DicomDataset> { dataset });
             return Task.FromResult(response);
         }
 

@@ -102,13 +102,13 @@ namespace FellowOakDicom.Tests.DicomWeb
                 DicomQidoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
                 => Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
 
-            public Task<IDicomWadoResponse> OnRetrieveInstancesAsync(
+            public Task<IDicomWadoInstanceResponse> OnRetrieveInstancesAsync(
                 DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
-                => Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
+                => Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
 
-            public Task<IDicomWadoResponse> OnRetrieveMetadataAsync(
+            public Task<IDicomWadoMetadataResponse> OnRetrieveMetadataAsync(
                 DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
-                => Task.FromResult<IDicomWadoResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>()));
+                => Task.FromResult<IDicomWadoMetadataResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>()));
         }
 
         /// <summary>
@@ -117,13 +117,13 @@ namespace FellowOakDicom.Tests.DicomWeb
         /// </summary>
         private class WadoOnlyDicomWebService : DicomWebService, IDicomWadoProvider
         {
-            public Task<IDicomWadoResponse> OnRetrieveInstancesAsync(
+            public Task<IDicomWadoInstanceResponse> OnRetrieveInstancesAsync(
                 DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
-                => Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
+                => Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
 
-            public Task<IDicomWadoResponse> OnRetrieveMetadataAsync(
+            public Task<IDicomWadoMetadataResponse> OnRetrieveMetadataAsync(
                 DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
-                => Task.FromResult<IDicomWadoResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>()));
+                => Task.FromResult<IDicomWadoMetadataResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>()));
         }
 
         /// <summary>
@@ -137,18 +137,18 @@ namespace FellowOakDicom.Tests.DicomWeb
                 DicomQidoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
                 => Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
 
-            public Task<IDicomWadoResponse> OnRetrieveInstancesAsync(
+            public Task<IDicomWadoInstanceResponse> OnRetrieveInstancesAsync(
                 DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
             {
                 LastWadoRequest = request;
-                return Task.FromResult<IDicomWadoResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
+                return Task.FromResult<IDicomWadoInstanceResponse>(new DicomWadoInstancesResponse(new List<DicomFile>()));
             }
 
-            public Task<IDicomWadoResponse> OnRetrieveMetadataAsync(
+            public Task<IDicomWadoMetadataResponse> OnRetrieveMetadataAsync(
                 DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
             {
                 LastWadoRequest = request;
-                return Task.FromResult<IDicomWadoResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>()));
+                return Task.FromResult<IDicomWadoMetadataResponse>(new DicomWadoMetadataResponse(new List<DicomDataset>()));
             }
         }
 

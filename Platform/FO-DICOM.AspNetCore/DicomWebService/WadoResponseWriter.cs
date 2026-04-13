@@ -43,7 +43,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// </summary>
         internal async Task ExecuteInstancesAsync(
             HttpContext context,
-            IDicomWadoResponse response,
+            IDicomWadoInstanceResponse response,
             CancellationToken cancellationToken)
         {
             switch (response)
@@ -82,7 +82,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// </summary>
         internal async Task ExecuteMetadataAsync(
             HttpContext context,
-            IDicomWadoResponse response,
+            IDicomWadoMetadataResponse response,
             CancellationToken cancellationToken)
         {
             switch (response)

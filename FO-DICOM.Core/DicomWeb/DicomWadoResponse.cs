@@ -7,10 +7,23 @@ using System.IO;
 namespace FellowOakDicom.DicomWeb
 {
     /// <summary>
-    /// Marker interface for responses to WADO-RS requests.
-    /// Returned by <see cref="FellowOakDicom.AspNetCore.DicomWebService.IDicomWadoProvider"/> methods.
+    /// Common base interface for all responses to WADO-RS requests.
     /// </summary>
     public interface IDicomWadoResponse { }
+
+    /// <summary>
+    /// Marker interface for responses to WADO-RS instance retrieval requests
+    /// (<see cref="FellowOakDicom.AspNetCore.DicomWebService.IDicomWadoProvider.OnRetrieveInstancesAsync"/>).
+    /// Implemented by instance response types and all failure responses.
+    /// </summary>
+    public interface IDicomWadoInstanceResponse : IDicomWadoResponse { }
+
+    /// <summary>
+    /// Marker interface for responses to WADO-RS metadata retrieval requests
+    /// (<see cref="FellowOakDicom.AspNetCore.DicomWebService.IDicomWadoProvider.OnRetrieveMetadataAsync"/>).
+    /// Implemented by metadata response types and all failure responses.
+    /// </summary>
+    public interface IDicomWadoMetadataResponse : IDicomWadoResponse { }
 
     // ── Instance responses ────────────────────────────────────────────────────
 
@@ -19,7 +32,7 @@ namespace FellowOakDicom.DicomWeb
     /// The framework serializes each file as a part in a
     /// <c>multipart/related; type="application/dicom"</c> response body (PS3.18 Section 10.4).
     /// </summary>
-    public class DicomWadoInstancesResponse : IDicomWadoResponse
+    public class DicomWadoInstancesResponse : IDicomWadoInstanceResponse
     {
         /// <summary>The DICOM instances to return to the client.</summary>
         public IList<DicomFile> Results { get; }
@@ -63,7 +76,7 @@ namespace FellowOakDicom.DicomWeb
     /// deserialize them into <see cref="DicomFile"/> objects.
     /// The framework writes each stream verbatim into a multipart part body.
     /// </summary>
-    public class DicomWadoRawInstancesResponse : IDicomWadoResponse
+    public class DicomWadoRawInstancesResponse : IDicomWadoInstanceResponse
     {
         /// <summary>The raw Part 10 encoded instance streams to return to the client.</summary>
         public IList<DicomWadoRawInstance> Results { get; }
@@ -79,7 +92,7 @@ namespace FellowOakDicom.DicomWeb
     /// <see cref="DicomFile"/> objects, enabling streaming of large result sets without
     /// buffering all instances in memory simultaneously.
     /// </summary>
-    public class DicomWadoAsyncInstancesResponse : IDicomWadoResponse
+    public class DicomWadoAsyncInstancesResponse : IDicomWadoInstanceResponse
     {
         /// <summary>The async sequence of DICOM instances to stream to the client.</summary>
         public IAsyncEnumerable<DicomFile> Results { get; }
@@ -95,7 +108,7 @@ namespace FellowOakDicom.DicomWeb
     /// <see cref="DicomWadoRawInstance"/>, enabling streaming of pre-encoded Part 10 bytes
     /// without buffering the entire study or series in memory.
     /// </summary>
-    public class DicomWadoAsyncRawInstancesResponse : IDicomWadoResponse
+    public class DicomWadoAsyncRawInstancesResponse : IDicomWadoInstanceResponse
     {
         /// <summary>The async sequence of raw Part 10 encoded instance streams.</summary>
         public IAsyncEnumerable<DicomWadoRawInstance> Results { get; }
@@ -114,7 +127,7 @@ namespace FellowOakDicom.DicomWeb
     /// <c>application/dicom+json</c> or <c>multipart/related; type="application/dicom+xml"</c>
     /// (PS3.18 Section 10.4.1.1.2).
     /// </summary>
-    public class DicomWadoMetadataResponse : IDicomWadoResponse
+    public class DicomWadoMetadataResponse : IDicomWadoMetadataResponse
     {
         /// <summary>The instance metadata datasets to return to the client.</summary>
         public IList<DicomDataset> Results { get; }
@@ -130,7 +143,7 @@ namespace FellowOakDicom.DicomWeb
     /// <see cref="DicomDataset"/>, enabling streaming of metadata for large studies without
     /// buffering all datasets in memory.
     /// </summary>
-    public class DicomWadoAsyncMetadataResponse : IDicomWadoResponse
+    public class DicomWadoAsyncMetadataResponse : IDicomWadoMetadataResponse
     {
         /// <summary>The async sequence of instance metadata datasets.</summary>
         public IAsyncEnumerable<DicomDataset> Results { get; }

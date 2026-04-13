@@ -39,7 +39,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         ///   <item>Any <see cref="DicomWebFailureResponse"/> subclass (400, 401, 403, 404, 501, 503)</item>
         /// </list>
         /// </returns>
-        Task<IDicomWadoResponse> OnRetrieveInstancesAsync(DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken);
+        Task<IDicomWadoInstanceResponse> OnRetrieveInstancesAsync(DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken);
 
         /// <summary>
         /// Retrieves instance metadata (DICOM datasets without bulk data) for the given scope
@@ -59,6 +59,6 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         ///   <item>Any <see cref="DicomWebFailureResponse"/> subclass (400, 401, 403, 404, 501, 503)</item>
         /// </list>
         /// </returns>
-        Task<IDicomWadoResponse> OnRetrieveMetadataAsync(DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken);
+        Task<IDicomWadoMetadataResponse> OnRetrieveMetadataAsync(DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken);
     }
 }
