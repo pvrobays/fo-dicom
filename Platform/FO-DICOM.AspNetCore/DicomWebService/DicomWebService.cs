@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -177,8 +178,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             var wadoRequest = BuildWadoRequest(context);
             var response = await InnerHandleWadoRequestAsync(
                 wadoRequest, context, cancellationToken,
-                (provider, req, ctx, ct) => provider.OnRetrieveInstancesAsync(req, ctx, ct),
-                "instances");
+                (provider, req, ctx, ct) => provider.OnRetrieveInstancesAsync(req, ctx, ct));
             await WadoWriter.ExecuteInstancesAsync(context, response, cancellationToken);
         }
 
@@ -188,8 +188,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             var wadoRequest = BuildWadoRequest(context);
             var response = await InnerHandleWadoRequestAsync(
                 wadoRequest, context, cancellationToken,
-                (provider, req, ctx, ct) => provider.OnRetrieveMetadataAsync(req, ctx, ct),
-                "metadata");
+                (provider, req, ctx, ct) => provider.OnRetrieveMetadataAsync(req, ctx, ct));
             await WadoWriter.ExecuteMetadataAsync(context, response, cancellationToken);
         }
 
@@ -207,13 +206,15 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// <summary>
         /// Checks that an <see cref="IDicomWadoProvider"/> is implemented, then delegates to the
         /// appropriate provider method. Returns a failure response on missing provider or exception.
+        /// The <paramref name="operationName"/> is captured automatically from the calling method
+        /// name via <see cref="CallerMemberNameAttribute"/> and used only for log messages.
         /// </summary>
         private async Task<IDicomWadoResponse> InnerHandleWadoRequestAsync(
             DicomWadoRequest request,
             HttpContext context,
             CancellationToken cancellationToken,
             Func<IDicomWadoProvider, DicomWadoRequest, HttpContext, CancellationToken, Task<IDicomWadoResponse>> invoke,
-            string operationName)
+            [CallerMemberName] string operationName = "")
         {
             if (!(this is IDicomWadoProvider thisAsWadoProvider))
             {
