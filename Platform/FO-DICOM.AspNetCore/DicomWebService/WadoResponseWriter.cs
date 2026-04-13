@@ -14,6 +14,37 @@ using System.Threading.Tasks;
 
 namespace FellowOakDicom.AspNetCore.DicomWebService
 {
+    // ── Content-Location mode ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Controls how <c>Content-Location</c> headers are formatted in WADO-RS multipart responses
+    /// (PS3.18 Section 10.4.1.1).
+    /// </summary>
+    public enum ContentLocationMode
+    {
+        /// <summary>
+        /// No <c>Content-Location</c> header is emitted. Use this to suppress the header
+        /// entirely, e.g. for internal or legacy clients that don't need it.
+        /// </summary>
+        None,
+
+        /// <summary>
+        /// Emit a path-absolute <c>Content-Location</c> value, e.g.
+        /// <c>/dicomweb/studies/1.2.3/series/4.5.6/instances/7.8.9</c>.
+        /// Works correctly behind reverse proxies regardless of the external hostname.
+        /// This is the default.
+        /// </summary>
+        Relative,
+
+        /// <summary>
+        /// Emit a fully-qualified absolute URL, e.g.
+        /// <c>https://pacs.example.com/dicomweb/studies/1.2.3/series/4.5.6/instances/7.8.9</c>.
+        /// Uses <c>HttpRequest.Scheme</c> and <c>HttpRequest.Host</c>; configure
+        /// <c>ForwardedHeaders</c> middleware when running behind a reverse proxy.
+        /// </summary>
+        Absolute,
+    }
+
     // ── Content negotiation result for WADO-RS instance retrieval ────────────
 
     /// <summary>
@@ -82,12 +113,18 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         private readonly string _serviceAgent;
         private readonly bool _writeTagsAsKeywords;
         private readonly bool _formatJsonIndented;
+        private readonly ContentLocationMode _contentLocationMode;
 
-        internal WadoResponseWriter(string serviceAgent, bool writeTagsAsKeywords, bool formatJsonIndented)
+        internal WadoResponseWriter(
+            string serviceAgent,
+            bool writeTagsAsKeywords,
+            bool formatJsonIndented,
+            ContentLocationMode contentLocationMode = ContentLocationMode.Relative)
         {
             _serviceAgent = serviceAgent;
             _writeTagsAsKeywords = writeTagsAsKeywords;
             _formatJsonIndented = formatJsonIndented;
+            _contentLocationMode = contentLocationMode;
         }
 
         // ── Accept header negotiation for instance retrieval ──────────────────
@@ -226,34 +263,33 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             HttpContext context,
             IDicomWadoInstanceResponse response,
             WadoInstanceNegotiationResult negotiation,
+            string? urlPrefix,
             CancellationToken cancellationToken)
         {
             switch (response)
             {
                 case DicomWadoInstancesResponse instancesResponse:
-                    // Determine effective target syntax (null = keep original)
                     var targetSyntax = ResolveTargetSyntax(negotiation);
                     if (targetSyntax != null)
                     {
-                        // Pre-transcode all files; return 406 if any fails
                         var transcoded = TryTranscodeAll(instancesResponse.Results, targetSyntax, context);
                         if (transcoded == null)
                         {
                             return; // 406 already written
                         }
                         await WriteDicomMultipartAsync(context, EnumerateFilesAsync(transcoded),
-                            targetSyntax, cancellationToken);
+                            targetSyntax, urlPrefix, cancellationToken);
                     }
                     else
                     {
                         await WriteDicomMultipartAsync(context, EnumerateFilesAsync(instancesResponse.Results),
-                            null, cancellationToken);
+                            null, urlPrefix, cancellationToken);
                     }
                     break;
 
                 case DicomWadoRawInstancesResponse rawResponse:
                     await WriteRawMultipartAsync(context,
-                        EnumerateRawAsync(rawResponse.Results), cancellationToken);
+                        EnumerateRawAsync(rawResponse.Results), urlPrefix, cancellationToken);
                     break;
 
                 case DicomWadoAsyncInstancesResponse asyncResponse:
@@ -262,11 +298,11 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                         asyncTarget != null
                             ? TranscodeStreamingAsync(asyncResponse.Results, asyncTarget, context, cancellationToken)
                             : asyncResponse.Results,
-                        asyncTarget, cancellationToken);
+                        asyncTarget, urlPrefix, cancellationToken);
                     break;
 
                 case DicomWadoAsyncRawInstancesResponse asyncRawResponse:
-                    await WriteRawMultipartAsync(context, asyncRawResponse.Results, cancellationToken);
+                    await WriteRawMultipartAsync(context, asyncRawResponse.Results, urlPrefix, cancellationToken);
                     break;
 
                 default:
@@ -429,14 +465,18 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
         /// <summary>
         /// Writes each DICOM file as a multipart part with
-        /// <c>Content-Type: application/dicom; transfer-syntax=&lt;uid&gt;</c>.
+        /// <c>Content-Type: application/dicom; transfer-syntax=&lt;uid&gt;</c> and, when UID
+        /// information is available and <see cref="_contentLocationMode"/> is not
+        /// <see cref="ContentLocationMode.None"/>, a <c>Content-Location</c> header pointing to
+        /// the single-instance WADO-RS URL for that part (PS3.18 Section 10.4.1.1).
         /// When <paramref name="transferSyntax"/> is <c>null</c> the transfer syntax is read
         /// from each file's own metadata and included in the Content-Type header.
         /// </summary>
-        private static async Task WriteDicomMultipartAsync(
+        private async Task WriteDicomMultipartAsync(
             HttpContext context,
             IAsyncEnumerable<DicomFile> files,
             DicomTransferSyntax? transferSyntax,
+            string? urlPrefix,
             CancellationToken cancellationToken)
         {
             var boundary = $"----dicom-boundary-{Guid.NewGuid():N}";
@@ -451,10 +491,22 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     ?? file.FileMetaInfo?.TransferSyntax
                     ?? file.Dataset.InternalTransferSyntax;
 
+                // Extract UIDs for Content-Location — tolerate missing tags gracefully
+                var studyUid = file.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty);
+                var seriesUid = file.Dataset.GetSingleValueOrDefault(DicomTag.SeriesInstanceUID, string.Empty);
+                var sopUid = file.Dataset.GetSingleValueOrDefault(DicomTag.SOPInstanceUID, string.Empty);
+                var contentLocation = BuildContentLocation(context, studyUid, seriesUid, sopUid, urlPrefix);
+
                 await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
                 await context.Response.WriteAsync(
-                    $"Content-Type: application/dicom; transfer-syntax={partSyntax.UID.UID}\r\n\r\n",
+                    $"Content-Type: application/dicom; transfer-syntax={partSyntax.UID.UID}\r\n",
                     cancellationToken);
+                if (contentLocation != null)
+                {
+                    await context.Response.WriteAsync(
+                        $"Content-Location: {contentLocation}\r\n", cancellationToken);
+                }
+                await context.Response.WriteAsync("\r\n", cancellationToken);
 
                 using (var ms = new MemoryStream())
                 {
@@ -468,9 +520,10 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             await context.Response.WriteAsync($"--{boundary}--\r\n", cancellationToken);
         }
 
-        private static async Task WriteRawMultipartAsync(
+        private async Task WriteRawMultipartAsync(
             HttpContext context,
             IAsyncEnumerable<DicomWadoRawInstance> parts,
+            string? urlPrefix,
             CancellationToken cancellationToken)
         {
             var boundary = $"----dicom-boundary-{Guid.NewGuid():N}";
@@ -480,23 +533,72 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
             await foreach (var part in parts.WithCancellation(cancellationToken))
             {
+                var contentLocation = BuildContentLocation(
+                    context, part.StudyInstanceUid, part.SeriesInstanceUid, part.SopInstanceUid, urlPrefix);
+
                 await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
                 if (part.TransferSyntaxUid != null)
                 {
                     await context.Response.WriteAsync(
-                        $"Content-Type: application/dicom; transfer-syntax={part.TransferSyntaxUid}\r\n\r\n",
+                        $"Content-Type: application/dicom; transfer-syntax={part.TransferSyntaxUid}\r\n",
                         cancellationToken);
                 }
                 else
                 {
-                    await context.Response.WriteAsync("Content-Type: application/dicom\r\n\r\n", cancellationToken);
+                    await context.Response.WriteAsync("Content-Type: application/dicom\r\n", cancellationToken);
                 }
+                if (contentLocation != null)
+                {
+                    await context.Response.WriteAsync(
+                        $"Content-Location: {contentLocation}\r\n", cancellationToken);
+                }
+                await context.Response.WriteAsync("\r\n", cancellationToken);
 
                 await part.Data.CopyToAsync(context.Response.Body, 81920, cancellationToken);
                 await context.Response.WriteAsync("\r\n", cancellationToken);
             }
 
             await context.Response.WriteAsync($"--{boundary}--\r\n", cancellationToken);
+        }
+
+        // ── Content-Location helper ───────────────────────────────────────────
+
+        /// <summary>
+        /// Builds a <c>Content-Location</c> value for a single DICOM instance multipart part,
+        /// or returns <c>null</c> when the value cannot be built (mode is
+        /// <see cref="ContentLocationMode.None"/>, any UID is missing, or no URL prefix was found
+        /// in the endpoint metadata).
+        /// </summary>
+        /// <param name="context">The current HTTP context.</param>
+        /// <param name="studyUid">Study Instance UID, or <c>null</c>.</param>
+        /// <param name="seriesUid">Series Instance UID, or <c>null</c>.</param>
+        /// <param name="sopUid">SOP Instance UID, or <c>null</c>.</param>
+        /// <param name="urlPrefix">
+        /// The DICOMweb URL prefix (e.g. <c>"/dicomweb"</c>) read from
+        /// <see cref="DicomWebEndpointMetadata"/>, or <c>null</c> if not available.
+        /// </param>
+        private string? BuildContentLocation(
+            HttpContext context,
+            string? studyUid,
+            string? seriesUid,
+            string? sopUid,
+            string? urlPrefix)
+        {
+            if (_contentLocationMode == ContentLocationMode.None) return null;
+            if (string.IsNullOrEmpty(studyUid) ||
+                string.IsNullOrEmpty(seriesUid) ||
+                string.IsNullOrEmpty(sopUid)) return null;
+            if (urlPrefix == null) return null;
+
+            var path = $"{urlPrefix}/studies/{studyUid}/series/{seriesUid}/instances/{sopUid}";
+
+            if (_contentLocationMode == ContentLocationMode.Absolute)
+            {
+                return $"{context.Request.Scheme}://{context.Request.Host}{path}";
+            }
+
+            // Relative (path-absolute)
+            return path;
         }
 
         // ── Metadata writing ──────────────────────────────────────────────────

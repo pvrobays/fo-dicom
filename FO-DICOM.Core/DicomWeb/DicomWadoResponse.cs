@@ -63,10 +63,59 @@ namespace FellowOakDicom.DicomWeb
         /// </summary>
         public string? TransferSyntaxUid { get; }
 
+        /// <summary>
+        /// The Study Instance UID of this instance, used by the framework to build the
+        /// <c>Content-Location</c> header for this multipart part (PS3.18 Section 10.4.1.1).
+        /// When <c>null</c>, no <c>Content-Location</c> header is emitted for this part.
+        /// </summary>
+        public string? StudyInstanceUid { get; }
+
+        /// <summary>
+        /// The Series Instance UID of this instance, used together with
+        /// <see cref="StudyInstanceUid"/> and <see cref="SopInstanceUid"/> to build the
+        /// <c>Content-Location</c> header. When <c>null</c>, no header is emitted.
+        /// </summary>
+        public string? SeriesInstanceUid { get; }
+
+        /// <summary>
+        /// The SOP Instance UID of this instance, used together with
+        /// <see cref="StudyInstanceUid"/> and <see cref="SeriesInstanceUid"/> to build the
+        /// <c>Content-Location</c> header. When <c>null</c>, no header is emitted.
+        /// </summary>
+        public string? SopInstanceUid { get; }
+
+        /// <summary>
+        /// Creates a raw instance part with optional transfer syntax and no UID context.
+        /// The framework will not emit a <c>Content-Location</c> header for this part.
+        /// </summary>
         public DicomWadoRawInstance(Stream data, string? transferSyntaxUid = null)
         {
             Data = data;
             TransferSyntaxUid = transferSyntaxUid;
+        }
+
+        /// <summary>
+        /// Creates a raw instance part with transfer syntax and the three UIDs needed for
+        /// the framework to emit a <c>Content-Location</c> header for this multipart part
+        /// (PS3.18 Section 10.4.1.1).
+        /// </summary>
+        /// <param name="data">Raw Part 10 encoded bytes for this instance.</param>
+        /// <param name="transferSyntaxUid">Transfer Syntax UID, or <c>null</c> if unknown.</param>
+        /// <param name="studyInstanceUid">Study Instance UID.</param>
+        /// <param name="seriesInstanceUid">Series Instance UID.</param>
+        /// <param name="sopInstanceUid">SOP Instance UID.</param>
+        public DicomWadoRawInstance(
+            Stream data,
+            string? transferSyntaxUid,
+            string? studyInstanceUid,
+            string? seriesInstanceUid,
+            string? sopInstanceUid)
+        {
+            Data = data;
+            TransferSyntaxUid = transferSyntaxUid;
+            StudyInstanceUid = studyInstanceUid;
+            SeriesInstanceUid = seriesInstanceUid;
+            SopInstanceUid = sopInstanceUid;
         }
     }
 

@@ -4,9 +4,11 @@
 
 #if !NET462
 
+using FellowOakDicom.AspNetCore;
 using FellowOakDicom.AspNetCore.DicomWebService;
 using FellowOakDicom.DicomWeb;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -975,6 +977,285 @@ namespace FellowOakDicom.Tests.DicomWeb
 
             Assert.True(result.IsAcceptable);
             Assert.Equal(DicomTransferSyntax.ExplicitVRLittleEndian, result.RequestedTransferSyntax);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // Content-Location per multipart part (PS3.18 Section 10.4.1.1)
+        // ─────────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// A TestWadoService whose ContentLocationMode can be set at construction time.
+        /// </summary>
+        private class TestWadoServiceWithMode : TestWadoService
+        {
+            private readonly ContentLocationMode _mode;
+
+            public TestWadoServiceWithMode(
+                ContentLocationMode mode,
+                Func<DicomWadoRequest, CancellationToken, Task<IDicomWadoInstanceResponse>> instancesHandler)
+                : base(instancesHandler)
+            {
+                _mode = mode;
+            }
+
+            protected override ContentLocationMode ContentLocationMode => _mode;
+        }
+
+        /// <summary>
+        /// Sets up an endpoint on the <see cref="DefaultHttpContext"/> so that
+        /// <c>context.GetEndpoint()?.Metadata.GetMetadata&lt;DicomWebEndpointMetadata&gt;()</c>
+        /// returns the metadata carrying <paramref name="urlPrefix"/>.
+        /// </summary>
+        private static DefaultHttpContext BuildHttpContextWithEndpointMetadata(
+            string urlPrefix,
+            string studyUid = null,
+            string seriesUid = null,
+            string sopUid = null,
+            string acceptHeader = null)
+        {
+            var context = BuildHttpContextWithRouteValues(studyUid, seriesUid, sopUid, acceptHeader);
+            var metadata = new DicomWebEndpointMetadata(urlPrefix);
+            context.SetEndpoint(new Endpoint(null, new EndpointMetadataCollection(metadata), "test"));
+            return context;
+        }
+
+        [FactForNetCore]
+        public async Task ContentLocation_DicomFile_WithAllUids_RelativeHeaderPresent()
+        {
+            // A DicomFile with all three UIDs + endpoint metadata → Content-Location relative path
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.StudyInstanceUID, "1.2.3");
+            dataset.Add(DicomTag.SeriesInstanceUID, "4.5.6");
+            dataset.Add(DicomTag.SOPInstanceUID, "7.8.9");
+            var dicomFile = new DicomFile(dataset);
+
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(
+                    new DicomWadoInstancesResponse(new List<DicomFile> { dicomFile })));
+
+            var context = BuildHttpContextWithEndpointMetadata("/dicomweb", studyUid: "1.2.3");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var body = await ReadBodyAsync(context);
+            Assert.Contains("Content-Location: /dicomweb/studies/1.2.3/series/4.5.6/instances/7.8.9", body);
+        }
+
+        [FactForNetCore]
+        public async Task ContentLocation_DicomFile_MissingUids_HeaderOmitted()
+        {
+            // DicomFile with SOPClassUID + SOPInstanceUID but missing StudyInstanceUID and
+            // SeriesInstanceUID → GetSingleValueOrDefault returns "" for those → Content-Location
+            // must be omitted gracefully (all three UIDs are required to build the path).
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.SOPInstanceUID, DicomUID.Generate());
+            // No StudyInstanceUID, no SeriesInstanceUID
+            var dicomFile = new DicomFile(dataset);
+
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(
+                    new DicomWadoInstancesResponse(new List<DicomFile> { dicomFile })));
+
+            var context = BuildHttpContextWithEndpointMetadata("/dicomweb", studyUid: "1.2.3");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var body = await ReadBodyAsync(context);
+            Assert.DoesNotContain("Content-Location:", body);
+        }
+
+        [FactForNetCore]
+        public async Task ContentLocation_DicomFile_NoEndpointMetadata_HeaderOmitted()
+        {
+            // No endpoint metadata (unit test default context) → urlPrefix is null → no header
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.StudyInstanceUID, "1.2.3");
+            dataset.Add(DicomTag.SeriesInstanceUID, "4.5.6");
+            dataset.Add(DicomTag.SOPInstanceUID, "7.8.9");
+            var dicomFile = new DicomFile(dataset);
+
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(
+                    new DicomWadoInstancesResponse(new List<DicomFile> { dicomFile })));
+
+            // No endpoint metadata — standard context without SetEndpoint
+            var context = BuildHttpContextWithRouteValues(studyUid: "1.2.3");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var body = await ReadBodyAsync(context);
+            Assert.DoesNotContain("Content-Location:", body);
+        }
+
+        [FactForNetCore]
+        public async Task ContentLocation_RawInstance_WithAllUids_HeaderPresent()
+        {
+            // DicomWadoRawInstance constructed with UIDs → Content-Location header appears
+            var rawBytes = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
+            var rawInstance = new DicomWadoRawInstance(
+                new MemoryStream(rawBytes),
+                "1.2.840.10008.1.2.1",
+                "1.2.3", "4.5.6", "7.8.9");
+
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(
+                    new DicomWadoRawInstancesResponse(new List<DicomWadoRawInstance> { rawInstance })));
+
+            var context = BuildHttpContextWithEndpointMetadata("/dicomweb", studyUid: "1.2.3");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var body = await ReadBodyAsync(context);
+            Assert.Contains("Content-Location: /dicomweb/studies/1.2.3/series/4.5.6/instances/7.8.9", body);
+        }
+
+        [FactForNetCore]
+        public async Task ContentLocation_RawInstance_WithoutUids_HeaderOmitted()
+        {
+            // DicomWadoRawInstance constructed without UIDs → Content-Location must be omitted
+            var rawInstance = new DicomWadoRawInstance(
+                new MemoryStream(new byte[] { 0x01, 0x02 }),
+                "1.2.840.10008.1.2.1"); // 2-arg ctor — no UIDs
+
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(
+                    new DicomWadoRawInstancesResponse(new List<DicomWadoRawInstance> { rawInstance })));
+
+            var context = BuildHttpContextWithEndpointMetadata("/dicomweb", studyUid: "1.2.3");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var body = await ReadBodyAsync(context);
+            Assert.DoesNotContain("Content-Location:", body);
+        }
+
+        [FactForNetCore]
+        public async Task ContentLocation_RelativePathFormat_StartsWithSlashAndContainsAllUids()
+        {
+            // Verify exact relative path format
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.StudyInstanceUID, "1.2.840.99.1");
+            dataset.Add(DicomTag.SeriesInstanceUID, "1.2.840.99.2");
+            dataset.Add(DicomTag.SOPInstanceUID, "1.2.840.99.3");
+            var dicomFile = new DicomFile(dataset);
+
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(
+                    new DicomWadoInstancesResponse(new List<DicomFile> { dicomFile })));
+
+            var context = BuildHttpContextWithEndpointMetadata("/wado", studyUid: "1.2.840.99.1");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            var body = await ReadBodyAsync(context);
+            // Path must start with the prefix, and contain all three UID segments
+            Assert.Contains("Content-Location: /wado/studies/1.2.840.99.1/series/1.2.840.99.2/instances/1.2.840.99.3", body);
+        }
+
+        [FactForNetCore]
+        public async Task ContentLocation_ModeNone_HeaderNotEmitted()
+        {
+            // ContentLocationMode.None → no Content-Location header regardless of UIDs/prefix
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.StudyInstanceUID, "1.2.3");
+            dataset.Add(DicomTag.SeriesInstanceUID, "4.5.6");
+            dataset.Add(DicomTag.SOPInstanceUID, "7.8.9");
+            var dicomFile = new DicomFile(dataset);
+
+            var service = new TestWadoServiceWithMode(
+                ContentLocationMode.None,
+                (req, ct) => Task.FromResult<IDicomWadoInstanceResponse>(
+                    new DicomWadoInstancesResponse(new List<DicomFile> { dicomFile })));
+
+            var context = BuildHttpContextWithEndpointMetadata("/dicomweb", studyUid: "1.2.3");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var body = await ReadBodyAsync(context);
+            Assert.DoesNotContain("Content-Location:", body);
+        }
+
+        [FactForNetCore]
+        public async Task ContentLocation_ModeAbsolute_HeaderContainsSchemeAndHost()
+        {
+            // ContentLocationMode.Absolute → full URL with scheme://host prefix
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.StudyInstanceUID, "1.2.3");
+            dataset.Add(DicomTag.SeriesInstanceUID, "4.5.6");
+            dataset.Add(DicomTag.SOPInstanceUID, "7.8.9");
+            var dicomFile = new DicomFile(dataset);
+
+            var service = new TestWadoServiceWithMode(
+                ContentLocationMode.Absolute,
+                (req, ct) => Task.FromResult<IDicomWadoInstanceResponse>(
+                    new DicomWadoInstancesResponse(new List<DicomFile> { dicomFile })));
+
+            var context = BuildHttpContextWithEndpointMetadata("/dicomweb", studyUid: "1.2.3");
+            // DefaultHttpContext defaults: Scheme = "http", Host = ""
+            context.Request.Scheme = "https";
+            context.Request.Host = new HostString("pacs.example.com");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var body = await ReadBodyAsync(context);
+            Assert.Contains(
+                "Content-Location: https://pacs.example.com/dicomweb/studies/1.2.3/series/4.5.6/instances/7.8.9",
+                body);
+        }
+
+        [FactForNetCore]
+        public async Task ContentLocation_AsyncDicomFile_WithAllUids_HeaderPresentPerPart()
+        {
+            // Async streaming DicomFile → Content-Location per part
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.StudyInstanceUID, "1.2.3");
+            dataset.Add(DicomTag.SeriesInstanceUID, "4.5.6");
+            dataset.Add(DicomTag.SOPInstanceUID, "7.8.9");
+            var dicomFile = new DicomFile(dataset);
+
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(
+                    new DicomWadoAsyncInstancesResponse(SingleItemAsync(dicomFile))));
+
+            var context = BuildHttpContextWithEndpointMetadata("/dicomweb", studyUid: "1.2.3");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var body = await ReadBodyAsync(context);
+            Assert.Contains("Content-Location: /dicomweb/studies/1.2.3/series/4.5.6/instances/7.8.9", body);
+        }
+
+        [FactForNetCore]
+        public async Task ContentLocation_ContentLocationAfterContentType_BeforeBlankLine()
+        {
+            // Content-Location must appear between Content-Type and the blank separator line
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.StudyInstanceUID, "1.2.3");
+            dataset.Add(DicomTag.SeriesInstanceUID, "4.5.6");
+            dataset.Add(DicomTag.SOPInstanceUID, "7.8.9");
+            var dicomFile = new DicomFile(dataset);
+
+            var service = new TestWadoService((req, ct) =>
+                Task.FromResult<IDicomWadoInstanceResponse>(
+                    new DicomWadoInstancesResponse(new List<DicomFile> { dicomFile })));
+
+            var context = BuildHttpContextWithEndpointMetadata("/dicomweb", studyUid: "1.2.3");
+            await service.HandleWadoInstancesRequestAsync(context);
+
+            var body = await ReadBodyAsync(context);
+            // Content-Type should appear before Content-Location in the body text
+            var ctIdx = body.IndexOf("Content-Type: application/dicom", StringComparison.Ordinal);
+            var clIdx = body.IndexOf("Content-Location:", StringComparison.Ordinal);
+            Assert.True(ctIdx >= 0, "Content-Type not found");
+            Assert.True(clIdx >= 0, "Content-Location not found");
+            Assert.True(ctIdx < clIdx, "Content-Type should appear before Content-Location");
         }
 
         // ─────────────────────────────────────────────────────────────────────────

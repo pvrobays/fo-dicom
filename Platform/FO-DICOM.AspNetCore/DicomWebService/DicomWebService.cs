@@ -10,6 +10,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using FellowOakDicom.AspNetCore;
 
 namespace FellowOakDicom.AspNetCore.DicomWebService
 {
@@ -76,6 +77,26 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         protected virtual string ServiceName => "fo-dicom-web";
 
         /// <summary>
+        /// Controls how <c>Content-Location</c> headers are formatted in WADO-RS multipart
+        /// responses (PS3.18 Section 10.4.1.1).
+        /// <para>
+        /// <see cref="ContentLocationMode.Relative"/> (default) emits path-absolute values
+        /// (e.g. <c>/dicomweb/studies/…/instances/…</c>) which work correctly behind reverse
+        /// proxies without additional configuration.
+        /// </para>
+        /// <para>
+        /// <see cref="ContentLocationMode.Absolute"/> prepends the request scheme and host
+        /// (e.g. <c>https://pacs.example.com/dicomweb/…</c>); configure
+        /// <c>ForwardedHeaders</c> middleware when behind a reverse proxy so the correct
+        /// external scheme and host are used.
+        /// </para>
+        /// <para>
+        /// <see cref="ContentLocationMode.None"/> suppresses the header entirely.
+        /// </para>
+        /// </summary>
+        protected virtual ContentLocationMode ContentLocationMode => ContentLocationMode.Relative;
+
+        /// <summary>
         /// Returns the lazily-initialised <see cref="QidoResponseWriter"/> for this service
         /// instance. The writer is created once from the virtual configuration properties and
         /// reused across all requests.
@@ -89,7 +110,8 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// reused across all requests.
         /// </summary>
         private WadoResponseWriter WadoWriter =>
-            _wadoResponseWriter ?? (_wadoResponseWriter = new WadoResponseWriter(ServiceName, WriteTagsAsKeywords, FormatJsonIndented));
+            _wadoResponseWriter ?? (_wadoResponseWriter = new WadoResponseWriter(
+                ServiceName, WriteTagsAsKeywords, FormatJsonIndented, ContentLocationMode));
 
         public async Task HandleQidoStudiesRequestAsync(HttpContext context)
         {
@@ -185,11 +207,16 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 return;
             }
 
+            // Read the DICOMweb URL prefix from endpoint metadata so the writer can build
+            // Content-Location headers without parsing the request path at runtime.
+            var urlPrefix = context.GetEndpoint()?.Metadata
+                .GetMetadata<DicomWebEndpointMetadata>()?.UrlPrefix;
+
             var wadoRequest = BuildWadoRequest(context, negotiation);
             var response = await InnerHandleWadoRequestAsync<IDicomWadoInstanceResponse>(
                 wadoRequest, context, cancellationToken,
                 (provider, req, ctx, ct) => provider.OnRetrieveInstancesAsync(req, ctx, ct));
-            await WadoWriter.WriteInstancesAsync(context, response, negotiation, cancellationToken);
+            await WadoWriter.WriteInstancesAsync(context, response, negotiation, urlPrefix, cancellationToken);
         }
 
         public async Task HandleWadoMetadataRequestAsync(HttpContext context)

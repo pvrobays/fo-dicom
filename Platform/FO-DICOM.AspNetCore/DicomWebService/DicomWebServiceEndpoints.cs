@@ -10,6 +10,23 @@ using System.Threading.Tasks;
 
 namespace FellowOakDicom.AspNetCore
 {
+    /// <summary>
+    /// Endpoint metadata attached to every DICOMweb route by
+    /// <see cref="ApplicationBuilderExtensions.MapDicomWebService"/>.
+    /// The <see cref="DicomWebService.WadoResponseWriter"/> reads this at request time to
+    /// construct <c>Content-Location</c> headers without string-parsing the request URL.
+    /// </summary>
+    internal sealed class DicomWebEndpointMetadata
+    {
+        /// <summary>
+        /// The URL prefix under which all DICOMweb endpoints are mounted,
+        /// e.g. <c>"/dicomweb"</c>. Never has a trailing slash.
+        /// </summary>
+        internal string UrlPrefix { get; }
+
+        internal DicomWebEndpointMetadata(string urlPrefix) => UrlPrefix = urlPrefix;
+    }
+
     public static partial class ApplicationBuilderExtensions
     {
         /// <summary>
@@ -92,6 +109,10 @@ namespace FellowOakDicom.AspNetCore
             // Instance-level metadata
             group.MapGet("/studies/{studyInstanceUID}/series/{seriesInstanceUID}/instances/{sopInstanceUID}/metadata", (HttpContext context) =>
                 HandleDicomWebAsync(context, (svc, ctx) => svc.HandleWadoMetadataRequestAsync(ctx)));
+
+            // Attach the URL prefix as endpoint metadata so WadoResponseWriter can build
+            // Content-Location headers without parsing the request URL at runtime.
+            group.WithMetadata(new DicomWebEndpointMetadata(urlPrefix));
 
             return group;
         }
