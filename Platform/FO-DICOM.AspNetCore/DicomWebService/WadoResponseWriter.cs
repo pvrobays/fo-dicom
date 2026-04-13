@@ -1,6 +1,7 @@
 // Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 
+using FellowOakDicom.AspNetCore;
 using FellowOakDicom.DicomWeb;
 using FellowOakDicom.Imaging.Codec;
 using Microsoft.AspNetCore.Http;
@@ -285,7 +286,6 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             HttpContext context,
             IDicomWadoInstanceResponse response,
             WadoInstanceNegotiationResult negotiation,
-            string? urlPrefix,
             CancellationToken cancellationToken)
         {
             switch (response)
@@ -300,18 +300,18 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                             return; // 406 already written
                         }
                         await WriteDicomMultipartAsync(context, EnumerateFilesAsync(transcoded),
-                            targetSyntax, urlPrefix, cancellationToken);
+                            targetSyntax, cancellationToken);
                     }
                     else
                     {
                         await WriteDicomMultipartAsync(context, EnumerateFilesAsync(instancesResponse.Results),
-                            null, urlPrefix, cancellationToken);
+                            null, cancellationToken);
                     }
                     break;
 
                 case DicomWadoRawInstancesResponse rawResponse:
                     await WriteRawMultipartAsync(context,
-                        EnumerateRawAsync(rawResponse.Results), urlPrefix, cancellationToken);
+                        EnumerateRawAsync(rawResponse.Results), cancellationToken);
                     break;
 
                 case DicomWadoAsyncInstancesResponse asyncResponse:
@@ -320,11 +320,11 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                         asyncTarget != null
                             ? TranscodeStreamingAsync(asyncResponse.Results, asyncTarget, context, cancellationToken)
                             : asyncResponse.Results,
-                        asyncTarget, urlPrefix, cancellationToken);
+                        asyncTarget, cancellationToken);
                     break;
 
                 case DicomWadoAsyncRawInstancesResponse asyncRawResponse:
-                    await WriteRawMultipartAsync(context, asyncRawResponse.Results, urlPrefix, cancellationToken);
+                    await WriteRawMultipartAsync(context, asyncRawResponse.Results, cancellationToken);
                     break;
 
                 default:
@@ -501,7 +501,6 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             HttpContext context,
             IAsyncEnumerable<DicomFile> files,
             DicomTransferSyntax? transferSyntax,
-            string? urlPrefix,
             CancellationToken cancellationToken)
         {
             var boundary = $"----dicom-boundary-{Guid.NewGuid():N}";
@@ -520,7 +519,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 var studyUid = file.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, string.Empty);
                 var seriesUid = file.Dataset.GetSingleValueOrDefault(DicomTag.SeriesInstanceUID, string.Empty);
                 var sopUid = file.Dataset.GetSingleValueOrDefault(DicomTag.SOPInstanceUID, string.Empty);
-                var contentLocation = BuildContentLocation(context, studyUid, seriesUid, sopUid, urlPrefix);
+                var contentLocation = BuildContentLocation(context, studyUid, seriesUid, sopUid);
 
                 await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
                 await context.Response.WriteAsync(
@@ -544,7 +543,6 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         private async Task WriteRawMultipartAsync(
             HttpContext context,
             IAsyncEnumerable<DicomWadoRawInstance> parts,
-            string? urlPrefix,
             CancellationToken cancellationToken)
         {
             var boundary = $"----dicom-boundary-{Guid.NewGuid():N}";
@@ -555,7 +553,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             await foreach (var part in parts.WithCancellation(cancellationToken))
             {
                 var contentLocation = BuildContentLocation(
-                    context, part.StudyInstanceUid, part.SeriesInstanceUid, part.SopInstanceUid, urlPrefix);
+                    context, part.StudyInstanceUid, part.SeriesInstanceUid, part.SopInstanceUid);
 
                 await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
                 if (part.TransferSyntaxUid != null)
@@ -589,26 +587,28 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// or returns <c>null</c> when the value cannot be built (mode is
         /// <see cref="ContentLocationMode.None"/>, any UID is missing, or no URL prefix was found
         /// in the endpoint metadata).
+        /// <para>
+        /// The DICOMweb URL prefix (e.g. <c>"/dicomweb"</c>) is read directly from the
+        /// <see cref="DicomWebEndpointMetadata"/> attached to <paramref name="context"/>'s
+        /// current endpoint, removing the need to thread it through the call chain.
+        /// </para>
         /// </summary>
         /// <param name="context">The current HTTP context.</param>
         /// <param name="studyUid">Study Instance UID, or <c>null</c>.</param>
         /// <param name="seriesUid">Series Instance UID, or <c>null</c>.</param>
         /// <param name="sopUid">SOP Instance UID, or <c>null</c>.</param>
-        /// <param name="urlPrefix">
-        /// The DICOMweb URL prefix (e.g. <c>"/dicomweb"</c>) read from
-        /// <see cref="DicomWebEndpointMetadata"/>, or <c>null</c> if not available.
-        /// </param>
         private string? BuildContentLocation(
             HttpContext context,
             string? studyUid,
             string? seriesUid,
-            string? sopUid,
-            string? urlPrefix)
+            string? sopUid)
         {
             if (_contentLocationMode == ContentLocationMode.None) return null;
             if (string.IsNullOrEmpty(studyUid) ||
                 string.IsNullOrEmpty(seriesUid) ||
                 string.IsNullOrEmpty(sopUid)) return null;
+            var urlPrefix = context.GetEndpoint()?.Metadata
+                .GetMetadata<DicomWebEndpointMetadata>()?.UrlPrefix;
             if (urlPrefix == null) return null;
 
             var path = $"{urlPrefix}/studies/{studyUid}/series/{seriesUid}/instances/{sopUid}";

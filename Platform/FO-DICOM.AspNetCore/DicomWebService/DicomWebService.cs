@@ -10,7 +10,6 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
-using FellowOakDicom.AspNetCore;
 
 namespace FellowOakDicom.AspNetCore.DicomWebService
 {
@@ -225,16 +224,11 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 return;
             }
 
-            // Read the DICOMweb URL prefix from endpoint metadata so the writer can build
-            // Content-Location headers without parsing the request path at runtime.
-            var urlPrefix = context.GetEndpoint()?.Metadata
-                .GetMetadata<DicomWebEndpointMetadata>()?.UrlPrefix;
-
             var wadoRequest = BuildWadoRequest(context, negotiation);
             var response = await InnerHandleWadoRequestAsync<IDicomWadoInstanceResponse>(
                 wadoRequest, context, cancellationToken,
                 (provider, req, ctx, ct) => provider.OnRetrieveInstancesAsync(req, ctx, ct));
-            await WadoWriter.WriteInstancesAsync(context, response, negotiation, urlPrefix, cancellationToken);
+            await WadoWriter.WriteInstancesAsync(context, response, negotiation, cancellationToken);
         }
 
         public async Task HandleWadoMetadataRequestAsync(HttpContext context)
