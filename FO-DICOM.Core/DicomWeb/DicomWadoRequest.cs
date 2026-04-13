@@ -1,11 +1,13 @@
 // Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 
+using System.Collections.Generic;
+
 namespace FellowOakDicom.DicomWeb
 {
     /// <summary>
-    /// Represents a WADO-RS retrieve request for either DICOM instances or metadata
-    /// at study, series, or instance level (PS3.18 Section 10.4).
+    /// Represents a WADO-RS retrieve request for either DICOM instances, metadata,
+    /// or individual frames at study, series, or instance level (PS3.18 Section 10.4).
     /// </summary>
     public class DicomWadoRequest
     {
@@ -44,6 +46,17 @@ namespace FellowOakDicom.DicomWeb
         public bool AcceptsAnyTransferSyntax { get; }
 
         /// <summary>
+        /// The 1-based frame numbers requested by the client for a WADO-RS frame retrieval request
+        /// (PS3.18 Section 10.4.1.1.4), or <c>null</c> for non-frame requests.
+        /// <para>
+        /// For example, a request for <c>/frames/1,3,5</c> yields <c>[1, 3, 5]</c>.
+        /// Providers may use this list to optimise loading — e.g. to avoid reading pixel data
+        /// for unrequested frames — but the framework performs the actual extraction itself.
+        /// </para>
+        /// </summary>
+        public IReadOnlyList<int>? FrameNumbers { get; }
+
+        /// <summary>
         /// Constructs a WADO-RS request for the given UID scope with optional transfer-syntax preference.
         /// </summary>
         /// <param name="studyInstanceUid">Study Instance UID (required).</param>
@@ -67,6 +80,29 @@ namespace FellowOakDicom.DicomWeb
             SopInstanceUid = sopInstanceUid;
             RequestedTransferSyntax = requestedTransferSyntax;
             AcceptsAnyTransferSyntax = acceptsAnyTransferSyntax;
+        }
+
+        /// <summary>
+        /// Constructs a WADO-RS frame retrieval request for specific frames of a single instance
+        /// (PS3.18 Section 10.4.1.1.4).
+        /// </summary>
+        /// <param name="studyInstanceUid">Study Instance UID (required).</param>
+        /// <param name="seriesInstanceUid">Series Instance UID (required for frame retrieval).</param>
+        /// <param name="sopInstanceUid">SOP Instance UID (required for frame retrieval).</param>
+        /// <param name="frameNumbers">
+        /// The 1-based frame numbers to retrieve (e.g. <c>new[] { 1, 3, 5 }</c> for frames 1, 3 and 5).
+        /// Must contain at least one element.
+        /// </param>
+        public DicomWadoRequest(
+            string studyInstanceUid,
+            string? seriesInstanceUid,
+            string? sopInstanceUid,
+            IReadOnlyList<int> frameNumbers)
+        {
+            StudyInstanceUid = studyInstanceUid;
+            SeriesInstanceUid = seriesInstanceUid;
+            SopInstanceUid = sopInstanceUid;
+            FrameNumbers = frameNumbers;
         }
     }
 }
