@@ -403,6 +403,107 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         }
 
         /// <summary>
+        /// Handles a STOW-RS Store Transaction request (PS3.18 Section 10.5).
+        /// </summary>
+        public async Task HandleStowRequestAsync(HttpContext context)
+        {
+            var cancellationToken = context.RequestAborted;
+
+            if (!(this is IDicomStowProvider thisAsStowProvider))
+            {
+                _logger.LogDebug("STOW request received but no IDicomStowProvider is implemented — returning 501");
+                context.Response.StatusCode = StatusCodes.Status501NotImplemented;
+                return;
+            }
+
+            // Optional study scope from route (null for POST /studies).
+            var studyInstanceUid = RouteUidHelper.GetRouteUid(context, "studyInstanceUID");
+
+            // Parse the multipart request body.
+            StowReadResult readResult;
+            try
+            {
+                readResult = await StowRequestReader.ReadAllAsync(context.Request, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "STOW request rejected: failed to read multipart body — {Reason}", ex.Message);
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await context.Response.WriteAsync(ex.Message, cancellationToken);
+                return;
+            }
+
+            if (!readResult.IsSuccess)
+            {
+                _logger.LogWarning("STOW request rejected: {Reason}", readResult.ErrorReason);
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await context.Response.WriteAsync(readResult.ErrorReason ?? "Bad request", cancellationToken);
+                return;
+            }
+
+            var allInstances = readResult.Files!;
+
+            // ── Study UID scope validation ──────────────────────────────────────
+            // When the request targets POST .../studies/{studyInstanceUID}, enforce that every
+            // submitted instance's StudyInstanceUID matches the route value.
+            var validInstances = new List<DicomFile>();
+            var frameworkFailures = new List<DicomStowInstanceResult>();
+
+            foreach (var file in allInstances)
+            {
+                if (studyInstanceUid != null)
+                {
+                    var instanceStudyUid = file.Dataset.GetSingleValueOrDefault(
+                        DicomTag.StudyInstanceUID, (string?)null);
+                    if (instanceStudyUid == null ||
+                        !string.Equals(instanceStudyUid, studyInstanceUid, StringComparison.Ordinal))
+                    {
+                        // Mismatch — report as framework failure, do not pass to provider.
+                        var sopClassUid = file.Dataset.GetSingleValueOrDefault(
+                            DicomTag.SOPClassUID, (string?)null) ?? string.Empty;
+                        var sopInstanceUid = file.Dataset.GetSingleValueOrDefault(
+                            DicomTag.SOPInstanceUID, (string?)null) ?? string.Empty;
+                        frameworkFailures.Add(new DicomStowInstanceResult(
+                            sopClassUid, sopInstanceUid,
+                            StowResponseWriter.FailureReasonMismatch));
+                        continue;
+                    }
+                }
+                validInstances.Add(file);
+            }
+
+            // If ALL instances failed UID validation → 409 immediately, no provider call.
+            if (validInstances.Count == 0 && frameworkFailures.Count > 0)
+            {
+                var allFailed = new List<DicomStowInstanceResult>(frameworkFailures);
+                await StowResponseWriter.WriteAsync(
+                    context,
+                    new DicomStowPartialSuccessResponse(
+                        new List<DicomStowInstanceResult>(), allFailed),
+                    new List<DicomStowInstanceResult>(),
+                    cancellationToken);
+                return;
+            }
+
+            var stowRequest = new DicomStowRequest(studyInstanceUid, validInstances);
+
+            IDicomStowResponse providerResponse;
+            try
+            {
+                providerResponse = await thisAsStowProvider.OnStoreInstancesAsync(
+                    stowRequest, context, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "STOW request failed: unhandled exception in OnStoreInstancesAsync");
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                return;
+            }
+
+            await StowResponseWriter.WriteAsync(context, providerResponse, frameworkFailures, cancellationToken);
+        }
+
+        /// <summary>
         /// Navigates a <paramref name="dataset"/> using a slash-separated bulk data path
         /// (e.g. <c>"7FE00010"</c>, <c>"54000100/0/54001010"</c>) and returns the element's
         /// <see cref="IByteBuffer"/>.

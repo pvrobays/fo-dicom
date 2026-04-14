@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 namespace FellowOakDicom.AspNetCore.DicomWebService
 {
     /// <summary>
-    /// Defines the contract for handling DICOMweb requests (QIDO-RS and WADO-RS).
+    /// Defines the contract for handling DICOMweb requests (QIDO-RS, WADO-RS, and STOW-RS).
     /// Implemented by <see cref="DicomWebService"/>.
     /// </summary>
     public interface IDicomWebService
@@ -105,5 +105,22 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// </para>
         /// </summary>
         Task HandleWadoBulkDataRequestAsync(HttpContext context);
+
+        // ── STOW-RS (Store) ────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Handles a STOW-RS Store Transaction request (PS3.18 Section 10.5).
+        /// Accepts <c>multipart/related; type="application/dicom"</c> POST bodies and stores
+        /// the submitted DICOM instances. Study Instance UID scope enforcement is applied
+        /// automatically by the framework when the route includes a <c>studyInstanceUID</c>.
+        /// <list type="bullet">
+        ///   <item><c>POST …/studies</c> — store to any study</item>
+        ///   <item><c>POST …/studies/{studyInstanceUID}</c> — store to a specific study</item>
+        /// </list>
+        /// Returns HTTP 200 (all stored), 202 (partial success), or 409 (all failed) with
+        /// a STOW-RS Response Module body (<c>application/dicom+xml</c> by default, or
+        /// <c>application/dicom+json</c> when the client sends an appropriate Accept header).
+        /// </summary>
+        Task HandleStowRequestAsync(HttpContext context);
     }
 }

@@ -122,6 +122,15 @@ namespace FellowOakDicom.AspNetCore
             group.MapGet("/studies/{studyInstanceUID}/series/{seriesInstanceUID}/instances/{sopInstanceUID}/bulk/{**bulkPath}", (HttpContext context) =>
                 HandleDicomWebAsync(context, (svc, ctx) => svc.HandleWadoBulkDataRequestAsync(ctx)));
 
+            // ── STOW-RS: Store Transaction (PS3.18 Section 10.5) ─────────────────
+            // POST /studies — store instances from any study
+            group.MapPost("/studies", (HttpContext context) =>
+                HandleDicomWebAsync(context, (svc, ctx) => svc.HandleStowRequestAsync(ctx)));
+
+            // POST /studies/{studyInstanceUID} — store instances scoped to a specific study
+            group.MapPost("/studies/{studyInstanceUID}", (HttpContext context) =>
+                HandleDicomWebAsync(context, (svc, ctx) => svc.HandleStowRequestAsync(ctx)));
+
             // Attach the URL prefix as endpoint metadata so WadoResponseWriter can build
             // Content-Location headers without parsing the request URL at runtime.
             group.WithMetadata(new DicomWebEndpointMetadata(urlPrefix));
