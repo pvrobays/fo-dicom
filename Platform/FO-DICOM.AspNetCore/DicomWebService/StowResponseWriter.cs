@@ -26,13 +26,26 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         // DICOM failure reason codes used for UID mismatch (PS3.4 Annex CC).
         internal const ushort FailureReasonMismatch = 0xC996;
 
+        // PS3.18 Section 10.5.1: Warning header value for partial success.
+        internal const string WarningHeaderValue =
+            "299 - \"The STOW-RS Store Transaction (PS3.18 10.5) encountered instance-level failures.\"";
+
         /// <summary>
         /// Writes the HTTP status code and response body for the given STOW-RS response.
         /// </summary>
+        /// <param name="context">The current HTTP context.</param>
+        /// <param name="response">The provider's response.</param>
+        /// <param name="frameworkFailures">Framework-level failures (e.g. Study UID mismatches).</param>
+        /// <param name="studyRetrieveUrl">
+        /// Optional top-level Retrieve URL (0008,1190) for the study-level WADO-RS endpoint.
+        /// PS3.18 Section 10.5.1 — SHOULD be present. <c>null</c> to omit.
+        /// </param>
+        /// <param name="cancellationToken">Cancellation token.</param>
         internal static async Task WriteAsync(
             HttpContext context,
             IDicomStowResponse response,
             IList<DicomStowInstanceResult> frameworkFailures,
+            string? studyRetrieveUrl,
             CancellationToken cancellationToken)
         {
             if (response is DicomWebFailureResponse failure)
@@ -78,6 +91,8 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             else if (anyFailed)
             {
                 context.Response.StatusCode = StatusCodes.Status202Accepted;
+                // PS3.18 Section 10.5.1: SHOULD include Warning header for partial success.
+                context.Response.Headers["Warning"] = WarningHeaderValue;
             }
             else
             {
@@ -90,13 +105,13 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             if (useJson)
             {
                 context.Response.ContentType = "application/dicom+json; charset=utf-8";
-                var json = BuildJsonResponse(stored, failed);
+                var json = BuildJsonResponse(studyRetrieveUrl, stored, failed);
                 await context.Response.WriteAsync(json, Encoding.UTF8, cancellationToken);
             }
             else
             {
                 context.Response.ContentType = "application/dicom+xml; charset=utf-8";
-                var xml = BuildXmlResponse(stored, failed);
+                var xml = BuildXmlResponse(studyRetrieveUrl, stored, failed);
                 await context.Response.WriteAsync(xml, Encoding.UTF8, cancellationToken);
             }
         }
@@ -115,12 +130,12 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// <summary>
         /// Builds the STOW-RS Response Module as DICOM XML (PS3.18 Annex F.2).
         /// The root element is a NativeDicomModel containing:
-        ///   - (0008,1190) RetrieveURL (optional, the service base URL — omitted here since we
-        ///     don't know the external URL at this level)
+        ///   - (0008,1190) RetrieveURL (study-level, when available)
         ///   - (0008,1199) ReferencedSOPSequence — one item per stored instance
         ///   - (0008,1198) FailedSOPSequence    — one item per failed instance
         /// </summary>
         private static string BuildXmlResponse(
+            string? studyRetrieveUrl,
             IList<DicomStowInstanceResult> stored,
             IList<DicomStowInstanceResult> failed)
         {
@@ -137,6 +152,12 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 writer.WriteStartDocument();
                 writer.WriteStartElement("NativeDicomModel");
                 writer.WriteAttributeString("xml", "space", null, "preserve");
+
+                // (0008,1190) top-level study RetrieveURL — PS3.18 Section 10.5.1
+                if (studyRetrieveUrl != null)
+                {
+                    WriteXmlValue(writer, "00081190", "UR", studyRetrieveUrl);
+                }
 
                 if (stored.Count > 0)
                 {
@@ -216,6 +237,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// Builds the STOW-RS Response Module as DICOM JSON (PS3.18 Annex F.2.3).
         /// </summary>
         private static string BuildJsonResponse(
+            string? studyRetrieveUrl,
             IList<DicomStowInstanceResult> stored,
             IList<DicomStowInstanceResult> failed)
         {
@@ -224,8 +246,16 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
 
             bool needsComma = false;
 
+            // (0008,1190) top-level study RetrieveURL — PS3.18 Section 10.5.1
+            if (studyRetrieveUrl != null)
+            {
+                AppendJsonValue(sb, "00081190", "UR", studyRetrieveUrl);
+                needsComma = true;
+            }
+
             if (stored.Count > 0)
             {
+                if (needsComma) sb.Append(',');
                 // "00081199": { "vr": "SQ", "Value": [...] }
                 AppendJsonSequence(sb, "00081199", stored, includeRetrieveUrl: true);
                 needsComma = true;

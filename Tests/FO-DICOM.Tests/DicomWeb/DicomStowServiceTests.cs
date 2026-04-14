@@ -439,6 +439,172 @@ namespace FellowOakDicom.Tests.DicomWeb
             Assert.Equal(2, instanceCount);
             Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         }
+
+        // ─── Warning header (PS3.18 Section 10.5.1) ──────────────────────────
+
+        [FactForNetCore]
+        public async Task HandleStow_PartialSuccess_HasWarningHeader()
+        {
+            // Provider reports one failure → 202 Accepted → Warning header MUST be present.
+            var service = new TestStowService((req, ct) =>
+            {
+                var stored = new List<DicomStowInstanceResult>
+                {
+                    new DicomStowInstanceResult(DicomUID.CTImageStorage.UID, "1.2.3.1")
+                };
+                var failed = new List<DicomStowInstanceResult>
+                {
+                    new DicomStowInstanceResult(DicomUID.CTImageStorage.UID, "1.2.3.2", 0x0110)
+                };
+                return Task.FromResult<IDicomStowResponse>(
+                    new DicomStowPartialSuccessResponse(stored, failed));
+            });
+
+            var body = BuildMultipartBody(
+                ("application/dicom", BuildDicomBytes(sopInstanceUid: "1.2.3.1")),
+                ("application/dicom", BuildDicomBytes(sopInstanceUid: "1.2.3.2")));
+            var context = BuildStowContext(body);
+
+            await service.HandleStowRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status202Accepted, context.Response.StatusCode);
+            Assert.True(context.Response.Headers.ContainsKey("Warning"),
+                "Response should contain Warning header for partial success (PS3.18 10.5.1)");
+            Assert.Contains("299", context.Response.Headers["Warning"].ToString());
+        }
+
+        [FactForNetCore]
+        public async Task HandleStow_FullSuccess_NoWarningHeader()
+        {
+            // Full success → 200 OK → no Warning header.
+            string sopInstanceUid = "1.2.3.99";
+            var service = new TestStowService((req, ct) =>
+                Task.FromResult(MakeSuccess(DicomUID.CTImageStorage.UID, sopInstanceUid)));
+
+            var body = BuildMultipartBody(("application/dicom", BuildDicomBytes(sopInstanceUid: sopInstanceUid)));
+            var context = BuildStowContext(body);
+
+            await service.HandleStowRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.False(context.Response.Headers.ContainsKey("Warning"),
+                "Response should NOT contain Warning header for full success");
+        }
+
+        [FactForNetCore]
+        public async Task HandleStow_StudyUidMismatch_HasWarningHeader()
+        {
+            // Framework-level partial failure (study UID mismatch) → 202 → Warning header.
+            var service = new TestStowService((req, ct) =>
+            {
+                // One valid instance passes to provider
+                var stored = new List<DicomStowInstanceResult>
+                {
+                    new DicomStowInstanceResult(DicomUID.CTImageStorage.UID,
+                        req.Instances[0].Dataset.GetSingleValueOrDefault(DicomTag.SOPInstanceUID, string.Empty))
+                };
+                return Task.FromResult<IDicomStowResponse>(new DicomStowSuccessResponse(stored));
+            });
+
+            var body = BuildMultipartBody(
+                ("application/dicom", BuildDicomBytes(studyUid: "1.2.3", sopInstanceUid: "1.2.3.1")),
+                ("application/dicom", BuildDicomBytes(studyUid: "9.9.9", sopInstanceUid: "1.2.3.2")));
+            var context = BuildStowContext(body, studyUid: "1.2.3");
+
+            await service.HandleStowRequestAsync(context);
+
+            Assert.Equal(StatusCodes.Status202Accepted, context.Response.StatusCode);
+            Assert.True(context.Response.Headers.ContainsKey("Warning"),
+                "Response should contain Warning header when framework rejects some instances");
+        }
+
+        // ─── Top-level RetrieveURL in response body ───────────────────────────
+
+        [FactForNetCore]
+        public async Task StowResponseWriter_WithStudyRetrieveUrl_EmitsTopLevelRetrieveUrlXml()
+        {
+            // Call StowResponseWriter directly (internal, InternalsVisibleTo allows this) to
+            // verify RetrieveURL is emitted when a study URL is provided.
+            var stored = new List<DicomStowInstanceResult>
+            {
+                new DicomStowInstanceResult(DicomUID.CTImageStorage.UID, "1.2.3.1")
+            };
+
+            var context = new DefaultHttpContext();
+            context.Response.Body = new MemoryStream();
+
+            await StowResponseWriter.WriteAsync(
+                context,
+                new DicomStowSuccessResponse(stored),
+                new List<DicomStowInstanceResult>(),
+                studyRetrieveUrl: "/dicomweb/studies/1.2.3",
+                CancellationToken.None);
+
+            var body = await ReadBodyStringAsync(context);
+
+            // Top-level (0008,1190) RetrieveURL should appear before (0008,1199) sequence
+            Assert.Contains("00081190", body);
+            Assert.Contains("/dicomweb/studies/1.2.3", body);
+        }
+
+        [FactForNetCore]
+        public async Task StowResponseWriter_WithStudyRetrieveUrl_EmitsTopLevelRetrieveUrlJson()
+        {
+            var stored = new List<DicomStowInstanceResult>
+            {
+                new DicomStowInstanceResult(DicomUID.CTImageStorage.UID, "1.2.3.1")
+            };
+
+            var context = new DefaultHttpContext();
+            context.Response.Body = new MemoryStream();
+            context.Request.Headers["Accept"] = "application/dicom+json";
+
+            await StowResponseWriter.WriteAsync(
+                context,
+                new DicomStowSuccessResponse(stored),
+                new List<DicomStowInstanceResult>(),
+                studyRetrieveUrl: "/dicomweb/studies/1.2.3",
+                CancellationToken.None);
+
+            var body = await ReadBodyStringAsync(context);
+
+            Assert.Contains("00081190", body);
+            Assert.Contains("/dicomweb/studies/1.2.3", body);
+            // Ensure it's valid JSON object containing both retrieve URL and referenced SOP sequence
+            Assert.StartsWith("{", body.TrimStart());
+            Assert.Contains("00081199", body);
+        }
+
+        [FactForNetCore]
+        public async Task StowResponseWriter_NullStudyRetrieveUrl_NoRetrieveUrlInBody()
+        {
+            // When study URL is null (no endpoint metadata), top-level 00081190 must be absent.
+            var stored = new List<DicomStowInstanceResult>
+            {
+                new DicomStowInstanceResult(DicomUID.CTImageStorage.UID, "1.2.3.1")
+            };
+
+            var context = new DefaultHttpContext();
+            context.Response.Body = new MemoryStream();
+
+            await StowResponseWriter.WriteAsync(
+                context,
+                new DicomStowSuccessResponse(stored),
+                new List<DicomStowInstanceResult>(),
+                studyRetrieveUrl: null,
+                CancellationToken.None);
+
+            var body = await ReadBodyStringAsync(context);
+
+            // Top-level 00081190 should NOT appear (only per-instance 00081190 inside 00081199
+            // items could appear, but our stored instance has no RetrieveUrl either here)
+            // Verify the sequence is still present
+            Assert.Contains("00081199", body);
+            // The root-level RetrieveURL element should not appear at the NativeDicomModel level
+            // (it could appear inside sequence items if the instance result had a URL, but our
+            // test instance has none, so 00081190 should be entirely absent)
+            Assert.DoesNotContain("00081190", body);
+        }
     }
 }
 

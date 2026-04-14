@@ -1,6 +1,7 @@
 // Copyright (c) 2012-2025 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 
+using FellowOakDicom.AspNetCore;
 using FellowOakDicom.DicomWeb;
 using FellowOakDicom.Imaging;
 using FellowOakDicom.Imaging.Codec;
@@ -481,6 +482,7 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                     new DicomStowPartialSuccessResponse(
                         new List<DicomStowInstanceResult>(), allFailed),
                     new List<DicomStowInstanceResult>(),
+                    BuildStudyRetrieveUrl(context, studyInstanceUid),
                     cancellationToken);
                 return;
             }
@@ -500,7 +502,32 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 return;
             }
 
-            await StowResponseWriter.WriteAsync(context, providerResponse, frameworkFailures, cancellationToken);
+            await StowResponseWriter.WriteAsync(
+                context, providerResponse, frameworkFailures,
+                BuildStudyRetrieveUrl(context, studyInstanceUid),
+                cancellationToken);
+        }
+
+        /// <summary>
+        /// Builds the study-level WADO-RS Retrieve URL for inclusion in STOW-RS response bodies
+        /// as the top-level (0008,1190) RetrieveURL attribute (PS3.18 Section 10.5.1).
+        /// Returns <c>null</c> when the study UID or endpoint URL prefix is not available.
+        /// </summary>
+        private string? BuildStudyRetrieveUrl(HttpContext context, string? studyInstanceUid)
+        {
+            if (string.IsNullOrEmpty(studyInstanceUid)) return null;
+            var urlPrefix = context.GetEndpoint()?.Metadata
+                .GetMetadata<DicomWebEndpointMetadata>()?.UrlPrefix;
+            if (urlPrefix == null) return null;
+
+            var path = $"{urlPrefix}/studies/{studyInstanceUid}";
+
+            if (ContentLocationMode == ContentLocationMode.Absolute)
+            {
+                return $"{context.Request.Scheme}://{context.Request.Host}{path}";
+            }
+
+            return path;
         }
 
         /// <summary>
