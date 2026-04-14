@@ -9,7 +9,7 @@ namespace FellowOakDicom.DicomWeb
     /// <see cref="IDicomWadoMetadataResponse"/>, and <see cref="IDicomWadoFrameResponse"/> so
     /// that a single failure type can be returned from any provider method without casting.
     /// </summary>
-    public abstract class DicomWebFailureResponse : IDicomQidoResponse, IDicomWadoInstanceResponse, IDicomWadoMetadataResponse, IDicomWadoFrameResponse { }
+    public abstract class DicomWebFailureResponse : IDicomQidoResponse, IDicomWadoInstanceResponse, IDicomWadoMetadataResponse, IDicomWadoFrameResponse, IDicomStowResponse { }
 
     /// <summary>
     /// The request could not be understood or contained invalid parameters (HTTP 400).
