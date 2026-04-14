@@ -30,6 +30,7 @@ namespace FellowOakDicom.SimplePacs
     {
         private readonly IDbContextFactory<SimplePacsDbContext> _dbFactory;
         private readonly DicomFileStore _fileStore;
+        private readonly ILogger _logger;
 
         public SimplePacsServer(
             IDbContextFactory<SimplePacsDbContext> dbFactory,
@@ -38,6 +39,7 @@ namespace FellowOakDicom.SimplePacs
             : base(loggerFactory)
         {
             _dbFactory = dbFactory;
+            _logger = loggerFactory.CreateLogger<SimplePacsServer>();
             var storageRoot = configuration["SimplePacs:StorageRoot"] ?? "dicom-storage";
             _fileStore = new DicomFileStore(storageRoot);
         }
@@ -71,6 +73,7 @@ namespace FellowOakDicom.SimplePacs
                     continue;
                 }
 
+                var fileSaved = false;
                 try
                 {
                     // ── Upsert study ─────────────────────────────────────────
@@ -120,7 +123,10 @@ namespace FellowOakDicom.SimplePacs
                     instance.FilePath         = $"{studyUid}/{sopUid}.dcm";
 
                     // ── Save file to disk ─────────────────────────────────────
+                    // fileSaved is declared before the try so the catch can clean up
+                    // if SaveChangesAsync throws after the file has been written.
                     await _fileStore.SaveAsync(file, studyUid, sopUid, cancellationToken);
+                    fileSaved = true;
 
                     await db.SaveChangesAsync(cancellationToken);
 
@@ -128,6 +134,13 @@ namespace FellowOakDicom.SimplePacs
                 }
                 catch (Exception)
                 {
+                    // If the file reached disk but the DB commit failed, delete it so
+                    // we don't accumulate orphaned files.
+                    if (fileSaved)
+                        try { _fileStore.Delete(studyUid, sopUid); } catch { /* best-effort */ }
+                    // Detach all tracked entities so the next iteration starts with a
+                    // clean change tracker — avoids cascading save failures.
+                    db.ChangeTracker.Clear();
                     failed.Add(new DicomStowInstanceResult(
                         sopClass ?? string.Empty, sopUid, 0x0110)); // Processing failure
                     continue;
@@ -135,7 +148,16 @@ namespace FellowOakDicom.SimplePacs
             }
 
             // Recompute derived study counts after all instances are processed.
-            await RecomputeStudyCountsAsync(db, request.Instances, cancellationToken);
+            // Wrapped in try/catch — a failure here is non-fatal; counts will be corrected
+            // on the next successful STOW for the same study.
+            try
+            {
+                await RecomputeStudyCountsAsync(db, request.Instances, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to recompute study counts after STOW — counts may be stale");
+            }
 
             if (failed.Count == 0)
                 return new DicomStowSuccessResponse(stored);
@@ -251,10 +273,17 @@ namespace FellowOakDicom.SimplePacs
             if (!string.IsNullOrEmpty(studyDateFilter))
                 q = ApplyDateFilter(q, r => r.StudyDate, studyDateFilter);
 
-            // Modalities In Study filter
+            // Modalities In Study filter — delimiter-aware to avoid "MR" matching "MRI".
+            // ModalitiesInStudy is stored as backslash-separated tokens e.g. "CT\MR\PT".
+            // We match when the token appears as the whole value, at the start, at the end,
+            // or in the middle — all delimited by backslashes.
             var modalityFilter = GetFilterValue(ds, DicomTag.ModalitiesInStudy);
             if (!string.IsNullOrEmpty(modalityFilter))
-                q = q.Where(r => r.ModalitiesInStudy != null && r.ModalitiesInStudy.Contains(modalityFilter));
+                q = q.Where(r => r.ModalitiesInStudy != null && (
+                    r.ModalitiesInStudy == modalityFilter ||
+                    EF.Functions.Like(r.ModalitiesInStudy, modalityFilter + @"\%") ||
+                    EF.Functions.Like(r.ModalitiesInStudy, @"%\" + modalityFilter) ||
+                    EF.Functions.Like(r.ModalitiesInStudy, @"%\" + modalityFilter + @"\%")));
 
             // Pagination
             if (request.Options.Offset > 0) q = q.Skip(request.Options.Offset);
@@ -494,37 +523,29 @@ namespace FellowOakDicom.SimplePacs
         private static System.Linq.Expressions.Expression<Func<T, bool>> BuildEqualsPredicate<T>(
             System.Linq.Expressions.Expression<Func<T, string?>> selector, string value)
         {
+            // Simple equality — no ToUpper() (which EF Core SQLite cannot translate).
+            // DICOM UIDs and dates are case-sensitive; patient names are stored as received.
             var param = System.Linq.Expressions.Expression.Parameter(typeof(T), "e");
             var member = System.Linq.Expressions.Expression.Invoke(selector, param);
             var constant = System.Linq.Expressions.Expression.Constant(value, typeof(string));
-            // Use string.Equals for case-insensitive on SQLite
-            var equals = System.Linq.Expressions.Expression.Equal(
-                System.Linq.Expressions.Expression.Call(
-                    typeof(string).GetMethod("ToUpper", System.Type.EmptyTypes)!,
-                    member),
-                System.Linq.Expressions.Expression.Constant(value.ToUpperInvariant()));
+            var equals = System.Linq.Expressions.Expression.Equal(member, constant);
             return System.Linq.Expressions.Expression.Lambda<Func<T, bool>>(equals, param);
         }
 
         private static System.Linq.Expressions.Expression<Func<T, bool>> BuildLikePredicate<T>(
             System.Linq.Expressions.Expression<Func<T, string?>> selector, string pattern)
         {
+            // Use EF.Functions.Like directly — no ToUpper() (untranslatable).
+            // SQLite LIKE is case-insensitive for ASCII by default, which covers
+            // the DICOM wildcard use-case adequately.
             var param = System.Linq.Expressions.Expression.Parameter(typeof(T), "e");
             var member = System.Linq.Expressions.Expression.Invoke(selector, param);
-            // EF Core SQLite translates EF.Functions.Like to SQL LIKE
             var efFunctions = System.Linq.Expressions.Expression.Constant(EF.Functions);
             var likeMethod = typeof(DbFunctionsExtensions).GetMethod(
                 "Like", new[] { typeof(DbFunctions), typeof(string), typeof(string) })!;
-            var call = System.Linq.Expressions.Expression.Call(
-                likeMethod, efFunctions, member,
-                System.Linq.Expressions.Expression.Constant(pattern.ToUpperInvariant()));
-            // wrap: EF.Functions.Like(e.Field.ToUpper(), pattern.ToUpper())
-            var upperMember = System.Linq.Expressions.Expression.Call(
-                typeof(string).GetMethod("ToUpper", System.Type.EmptyTypes)!,
-                member);
             var likeCall = System.Linq.Expressions.Expression.Call(
-                likeMethod, efFunctions, upperMember,
-                System.Linq.Expressions.Expression.Constant(pattern.ToUpperInvariant()));
+                likeMethod, efFunctions, member,
+                System.Linq.Expressions.Expression.Constant(pattern));
             return System.Linq.Expressions.Expression.Lambda<Func<T, bool>>(likeCall, param);
         }
 
@@ -536,11 +557,12 @@ namespace FellowOakDicom.SimplePacs
             var param = System.Linq.Expressions.Expression.Parameter(typeof(T), "e");
             var member = System.Linq.Expressions.Expression.Invoke(selector, param);
             var constant = System.Linq.Expressions.Expression.Constant(value, typeof(string));
-            // String.Compare for lexicographic date comparison (DA strings are YYYYMMDD — safe)
+            // Use the 2-parameter string.Compare overload — EF Core SQLite CAN translate this,
+            // unlike the 3-parameter overload that takes StringComparison.
+            // DA strings are YYYYMMDD so lexicographic ordering == chronological ordering.
             var compareCall = System.Linq.Expressions.Expression.Call(
-                typeof(string).GetMethod("Compare", new[] { typeof(string), typeof(string), typeof(StringComparison) })!,
-                member, constant,
-                System.Linq.Expressions.Expression.Constant(StringComparison.Ordinal));
+                typeof(string).GetMethod("Compare", new[] { typeof(string), typeof(string) })!,
+                member, constant);
             System.Linq.Expressions.Expression comparison = op == ">="
                 ? System.Linq.Expressions.Expression.GreaterThanOrEqual(compareCall,
                     System.Linq.Expressions.Expression.Constant(0))
@@ -564,19 +586,28 @@ namespace FellowOakDicom.SimplePacs
                 return new DicomWebNotFoundResponse();
 
             // Return raw file streams to avoid re-parsing large files.
+            // On exception, dispose any streams already opened to prevent leaks.
             var rawList = new List<DicomWadoRawInstance>();
-            foreach (var inst in instances)
+            try
             {
-                var studyUid = inst.Series?.Study?.StudyInstanceUid;
-                if (studyUid == null) continue;
-                var stream = _fileStore.OpenRead(studyUid, inst.SopInstanceUid);
-                if (stream == null) continue;
-                rawList.Add(new DicomWadoRawInstance(
-                    stream,
-                    inst.TransferSyntaxUid,
-                    studyUid,
-                    inst.Series?.SeriesInstanceUid,
-                    inst.SopInstanceUid));
+                foreach (var inst in instances)
+                {
+                    var studyUid = inst.Series?.Study?.StudyInstanceUid;
+                    if (studyUid == null) continue;
+                    var stream = _fileStore.OpenRead(studyUid, inst.SopInstanceUid);
+                    if (stream == null) continue;
+                    rawList.Add(new DicomWadoRawInstance(
+                        stream,
+                        inst.TransferSyntaxUid,
+                        studyUid,
+                        inst.Series?.SeriesInstanceUid,
+                        inst.SopInstanceUid));
+                }
+            }
+            catch
+            {
+                foreach (var raw in rawList) raw.Data.Dispose();
+                throw;
             }
 
             if (rawList.Count == 0)
