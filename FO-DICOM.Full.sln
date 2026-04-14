@@ -55,7 +55,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FO-DICOM.Documentation.DocF
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FO-DICOM.Imaging.ImageSharp.NetStandard", "Platform\FO-DICOM.Imaging.ImageSharp.NetStandard\FO-DICOM.Imaging.ImageSharp.NetStandard.csproj", "{254100C7-5857-4760-94B7-5AEB8DBDDEED}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FO-DICOM.DicomWeb", "Tools\FO-DICOM.DicomWeb\FO-DICOM.DicomWeb.csproj", "{B60F1F28-2634-40B0-AC2C-438A4E1EA363}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FO-DICOM.SimplePacs", "Tools\FO-DICOM.SimplePacs\FO-DICOM.SimplePacs.csproj", "{B60F1F28-2634-40B0-AC2C-438A4E1EA363}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FO-DICOM.Imaging.SkiaSharp", "Platform\FO-DICOM.Imaging.SkiaSharp\FO-DICOM.Imaging.SkiaSharp.csproj", "{B10098DE-6183-42A8-B5E9-16BAA85150B9}"
 EndProject
 Global

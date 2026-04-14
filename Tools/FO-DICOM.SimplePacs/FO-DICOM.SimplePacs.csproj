@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>disable</ImplicitUsings>
+        <RootNamespace>FellowOakDicom.SimplePacs</RootNamespace>
+        <AssemblyName>fo-dicom.SimplePacs</AssemblyName>
+        <Platforms>AnyCPU;x64</Platforms>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\FO-DICOM.Core\FO-DICOM.Core.csproj" />
+        <ProjectReference Include="..\..\Platform\FO-DICOM.AspNetCore\FO-DICOM.AspNetCore.csproj" />
+    </ItemGroup>
+
+</Project>
