@@ -152,7 +152,7 @@ namespace FellowOakDicom.SimplePacs
             // on the next successful STOW for the same study.
             try
             {
-                await RecomputeStudyCountsAsync(db, request.Instances, cancellationToken);
+                await RecomputeStudyCountsAsync(_dbFactory, request.Instances, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -168,9 +168,11 @@ namespace FellowOakDicom.SimplePacs
         /// <summary>
         /// Recomputes NumberOfStudyRelatedSeries, NumberOfStudyRelatedInstances,
         /// and ModalitiesInStudy for every study touched by the given instances.
+        /// Uses a fresh DbContext to avoid EF Core change-tracker identity-map
+        /// interfering with navigation-property loading on already-tracked entities.
         /// </summary>
         private static async Task RecomputeStudyCountsAsync(
-            SimplePacsDbContext db,
+            IDbContextFactory<SimplePacsDbContext> dbFactory,
             IReadOnlyList<DicomFile> instances,
             CancellationToken cancellationToken)
         {
@@ -181,6 +183,10 @@ namespace FellowOakDicom.SimplePacs
                 var uid = f.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, (string?)null);
                 if (!string.IsNullOrEmpty(uid)) studyUids.Add(uid);
             }
+
+            // Use a fresh context so the query is not affected by the change-tracker
+            // state of the STOW context (navigation properties may not be fully loaded).
+            await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
             foreach (var studyUid in studyUids)
             {
@@ -585,35 +591,22 @@ namespace FellowOakDicom.SimplePacs
             if (instances.Count == 0)
                 return new DicomWebNotFoundResponse();
 
-            // Return raw file streams to avoid re-parsing large files.
-            // On exception, dispose any streams already opened to prevent leaks.
-            var rawList = new List<DicomWadoRawInstance>();
-            try
+            // Load each file fully into memory so the underlying FileStream is closed
+            // before we return, preventing file-locking issues during cleanup.
+            var fileList = new List<DicomFile>();
+            foreach (var inst in instances)
             {
-                foreach (var inst in instances)
-                {
-                    var studyUid = inst.Series?.Study?.StudyInstanceUid;
-                    if (studyUid == null) continue;
-                    var stream = _fileStore.OpenRead(studyUid, inst.SopInstanceUid);
-                    if (stream == null) continue;
-                    rawList.Add(new DicomWadoRawInstance(
-                        stream,
-                        inst.TransferSyntaxUid,
-                        studyUid,
-                        inst.Series?.SeriesInstanceUid,
-                        inst.SopInstanceUid));
-                }
-            }
-            catch
-            {
-                foreach (var raw in rawList) raw.Data.Dispose();
-                throw;
+                var studyUid = inst.Series?.Study?.StudyInstanceUid;
+                if (studyUid == null) continue;
+                var file = await _fileStore.LoadAsync(studyUid, inst.SopInstanceUid, cancellationToken);
+                if (file == null) continue;
+                fileList.Add(file);
             }
 
-            if (rawList.Count == 0)
+            if (fileList.Count == 0)
                 return new DicomWebNotFoundResponse();
 
-            return new DicomWadoRawInstancesResponse(rawList);
+            return new DicomWadoInstancesResponse(fileList);
         }
 
         public async Task<IDicomWadoMetadataResponse> OnRetrieveMetadataAsync(
