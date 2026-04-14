@@ -558,6 +558,124 @@ namespace FellowOakDicom.Tests.DicomWeb
             Assert.Equal("1.2.3", service.LastWadoRequest.StudyInstanceUid);
             Assert.Null(service.LastWadoRequest.SeriesInstanceUid);
         }
+
+        // ── WADO-RS Bulk Data endpoint ─────────────────────────────────────────
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_GetBulkData_TopLevelTag_Returns200()
+        {
+            var pixelBytes = new byte[] { 0x01, 0x02, 0x03, 0x04 };
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.SOPInstanceUID, DicomUID.Generate());
+            dataset.Add(new DicomOtherWord(DicomTag.PixelData,
+                new FellowOakDicom.IO.Buffer.MemoryByteBuffer(pixelBytes)));
+
+            var host = new HostBuilder()
+                .ConfigureWebHost(webHost =>
+                {
+                    webHost.UseTestServer();
+                    webHost.ConfigureServices(services =>
+                    {
+                        services.AddFellowOakDicom();
+                        services.AddRouting();
+                        services.AddSingleton<IDicomWebService>(
+                            _ => new FullBulkService(dataset));
+                    });
+                    webHost.Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints => endpoints.MapDicomWebService("/dicomweb"));
+                    });
+                })
+                .Build();
+            host.Start();
+            var client = host.GetTestServer().CreateClient();
+
+            var response = await client.GetAsync(
+                "/dicomweb/studies/1.2.3/series/4.5.6/instances/7.8.9/bulk/7FE00010");
+
+            Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+            var ct = response.Content.Headers.ContentType?.ToString() ?? string.Empty;
+            Assert.Contains("multipart/related", ct);
+            Assert.Contains("application/octet-stream", ct);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_GetBulkData_NoProvider_Returns501()
+        {
+            using var client = BuildTestClient<NoProviderDicomWebService>();
+            var response = await client.GetAsync(
+                "/dicomweb/studies/1.2.3/series/4.5.6/instances/7.8.9/bulk/7FE00010");
+            Assert.Equal(System.Net.HttpStatusCode.NotImplemented, response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_GetBulkData_NestedPath_IsRoutedCorrectly()
+        {
+            var waveBytes = new byte[] { 0xAA, 0xBB };
+            var seqItem = new DicomDataset
+            {
+                new DicomOtherByte(DicomTag.WaveformData,
+                    new FellowOakDicom.IO.Buffer.MemoryByteBuffer(waveBytes))
+            };
+            var ds = new DicomDataset().NotValidated();
+            ds.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+            ds.Add(DicomTag.SOPInstanceUID, DicomUID.Generate());
+            ds.Add(new DicomSequence(DicomTag.ReferencedSOPSequence, seqItem));
+
+            var host = new HostBuilder()
+                .ConfigureWebHost(webHost =>
+                {
+                    webHost.UseTestServer();
+                    webHost.ConfigureServices(services =>
+                    {
+                        services.AddFellowOakDicom();
+                        services.AddRouting();
+                        services.AddSingleton<IDicomWebService>(
+                            _ => new FullBulkService(ds));
+                    });
+                    webHost.Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints => endpoints.MapDicomWebService("/dicomweb"));
+                    });
+                })
+                .Build();
+            host.Start();
+            var client = host.GetTestServer().CreateClient();
+
+            var seqTag  = DicomBulkDataHelper.FormatTagForUrl(DicomTag.ReferencedSOPSequence);
+            var elemTag = DicomBulkDataHelper.FormatTagForUrl(DicomTag.WaveformData);
+            var response = await client.GetAsync(
+                $"/dicomweb/studies/1.2.3/series/4.5.6/instances/7.8.9/bulk/{seqTag}/0/{elemTag}");
+
+            Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        }
+
+        /// <summary>
+        /// Service used for bulk data routing tests — returns a single pre-built DicomFile.
+        /// </summary>
+        private class FullBulkService : DicomWebService, IDicomQidoProvider, IDicomWadoProvider
+        {
+            private readonly DicomDataset _dataset;
+
+            public FullBulkService(DicomDataset dataset) => _dataset = dataset;
+
+            public Task<IDicomQidoResponse> OnQidoRequestAsync(
+                DicomQidoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+                => Task.FromResult<IDicomQidoResponse>(new DicomQidoSuccessResponse());
+
+            public Task<IDicomWadoInstanceResponse> OnRetrieveInstancesAsync(
+                DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+                => Task.FromResult<IDicomWadoInstanceResponse>(
+                    new DicomWadoInstancesResponse(new List<DicomFile> { new DicomFile(_dataset) }));
+
+            public Task<IDicomWadoMetadataResponse> OnRetrieveMetadataAsync(
+                DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+                => Task.FromResult<IDicomWadoMetadataResponse>(
+                    new DicomWadoMetadataResponse(new List<DicomDataset>()));
+        }
     }
 }
 

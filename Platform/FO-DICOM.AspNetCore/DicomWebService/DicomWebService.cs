@@ -333,8 +333,193 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             await WadoWriter.WriteFramesAsync(context, frameResponse, negotiation, cancellationToken);
         }
 
+        public async Task HandleWadoBulkDataRequestAsync(HttpContext context)
+        {
+            var cancellationToken = context.RequestAborted;
+
+            // Parse the catch-all {**bulkPath} route value (e.g. "7FE00010" or "54000100/0/54001010").
+            var bulkPath = context.Request.RouteValues["bulkPath"] as string;
+            if (string.IsNullOrWhiteSpace(bulkPath))
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
+
+            var studyUid  = RouteUidHelper.GetRouteUid(context, "studyInstanceUID") ?? string.Empty;
+            var seriesUid = RouteUidHelper.GetRouteUid(context, "seriesInstanceUID");
+            var sopUid    = RouteUidHelper.GetRouteUid(context, "sopInstanceUID");
+            var wadoRequest = new DicomWadoRequest(studyUid, seriesUid, sopUid);
+
+            var instanceResponse = await InnerHandleWadoRequestAsync<IDicomWadoInstanceResponse>(
+                wadoRequest, context, cancellationToken,
+                (provider, req, ctx, ct) => provider.OnRetrieveInstancesAsync(req, ctx, ct));
+
+            if (instanceResponse is DicomWebFailureResponse failure)
+            {
+                await DicomWebFailureWriter.WriteAsync(context, failure, cancellationToken);
+                return;
+            }
+
+            // Only DicomWadoInstancesResponse is supported for bulk data retrieval.
+            if (!(instanceResponse is DicomWadoInstancesResponse instancesResponse) ||
+                instancesResponse.Results.Count == 0)
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+
+            var file = instancesResponse.Results[0];
+
+            // Navigate the dataset using the bulk path segments.
+            IByteBuffer? elementBuffer;
+            try
+            {
+                elementBuffer = ResolveBulkDataElement(file.Dataset, bulkPath);
+            }
+            catch (DicomBulkDataPathException ex)
+            {
+                context.Response.StatusCode = ex.StatusCode;
+                await context.Response.WriteAsync(ex.Message, cancellationToken);
+                return;
+            }
+
+            if (elementBuffer == null)
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+
+            // Return the raw bytes as multipart/related; type="application/octet-stream".
+            var boundary = $"----dicom-bulk-boundary-{Guid.NewGuid():N}";
+            context.Response.StatusCode = StatusCodes.Status200OK;
+            context.Response.ContentType =
+                $"multipart/related; type=\"application/octet-stream\"; boundary={boundary}";
+
+            await context.Response.WriteAsync($"--{boundary}\r\n", cancellationToken);
+            await context.Response.WriteAsync("Content-Type: application/octet-stream\r\n\r\n", cancellationToken);
+            await elementBuffer.CopyToStreamAsync(context.Response.Body, cancellationToken);
+            await context.Response.WriteAsync("\r\n", cancellationToken);
+            await context.Response.WriteAsync($"--{boundary}--\r\n", cancellationToken);
+        }
+
         /// <summary>
-        /// Parses a comma-separated frame list string (e.g. <c>"1,3,5"</c>) into an array of
+        /// Navigates a <paramref name="dataset"/> using a slash-separated bulk data path
+        /// (e.g. <c>"7FE00010"</c>, <c>"54000100/0/54001010"</c>) and returns the element's
+        /// <see cref="IByteBuffer"/>.
+        /// </summary>
+        /// <returns>The element buffer, or <c>null</c> when the tag is not present.</returns>
+        /// <exception cref="DicomBulkDataPathException">
+        /// Thrown with 400 when the path is malformed, the VR is not a bulk data VR, or the
+        /// sequence index is out of range.
+        /// </exception>
+        private static IByteBuffer? ResolveBulkDataElement(DicomDataset dataset, string bulkPath)
+        {
+            // A bulk path is either:
+            //   <tagHex>                         — top-level element
+            //   <seqTagHex>/<index>/<elementTagHex>[/<index>/<elementTagHex>…] — nested
+            var segments = bulkPath.Split('/');
+
+            DicomDataset current = dataset;
+            int i = 0;
+            while (i < segments.Length)
+            {
+                var tagHex = segments[i++];
+                DicomTag tag;
+                try
+                {
+                    tag = DicomTag.Parse(tagHex);
+                }
+                catch
+                {
+                    throw new DicomBulkDataPathException(
+                        StatusCodes.Status400BadRequest,
+                        $"Invalid DICOM tag '{tagHex}' in bulk path '{bulkPath}'");
+                }
+
+                // If there are more segments, this tag must be a sequence.
+                if (i < segments.Length)
+                {
+                    var seq = current.GetDicomItem<DicomSequence>(tag);
+                    if (seq == null)
+                    {
+                        throw new DicomBulkDataPathException(
+                            StatusCodes.Status404NotFound,
+                            $"Sequence tag '{tagHex}' not found in dataset");
+                    }
+
+                    // Next segment must be a numeric item index.
+                    if (!int.TryParse(segments[i++], out int itemIndex) || itemIndex < 0)
+                    {
+                        throw new DicomBulkDataPathException(
+                            StatusCodes.Status400BadRequest,
+                            $"Expected numeric sequence item index in bulk path '{bulkPath}'");
+                    }
+                    if (itemIndex >= seq.Items.Count)
+                    {
+                        throw new DicomBulkDataPathException(
+                            StatusCodes.Status404NotFound,
+                            $"Sequence item index {itemIndex} is out of range (sequence has {seq.Items.Count} item(s))");
+                    }
+                    current = seq.Items[itemIndex];
+                    continue;
+                }
+
+                // Leaf element — must be a bulk data VR.
+                var item = current.GetDicomItem<DicomItem>(tag);
+                if (item == null)
+                {
+                    return null; // 404
+                }
+                if (!DicomBulkDataHelper.IsBulkDataVR(item.ValueRepresentation))
+                {
+                    throw new DicomBulkDataPathException(
+                        StatusCodes.Status400BadRequest,
+                        $"Tag '{tagHex}' has VR {item.ValueRepresentation} which is not a bulk data VR");
+                }
+
+                if (item is DicomFragmentSequence fragSeq)
+                {
+                    // Concatenate all fragments into a single contiguous buffer.
+                    return ConcatenateFragments(fragSeq);
+                }
+
+                if (item is DicomElement element)
+                {
+                    return element.Buffer;
+                }
+
+                return null;
+            }
+
+            throw new DicomBulkDataPathException(
+                StatusCodes.Status400BadRequest,
+                $"Bulk data path '{bulkPath}' did not resolve to an element");
+        }
+
+        /// <summary>
+        /// Concatenates all fragments of an encapsulated pixel data sequence into a
+        /// single <see cref="MemoryByteBuffer"/>, suitable for bulk data retrieval.
+        /// </summary>
+        private static IByteBuffer ConcatenateFragments(DicomFragmentSequence fragSeq)
+        {
+            long totalSize = 0;
+            foreach (var frag in fragSeq.Fragments)
+            {
+                totalSize += frag.Size;
+            }
+
+            var bytes = new byte[totalSize];
+            int offset = 0;
+            foreach (var frag in fragSeq.Fragments)
+            {
+                var fragData = frag.Data;
+                System.Buffer.BlockCopy(fragData, 0, bytes, offset, fragData.Length);
+                offset += fragData.Length;
+            }
+            return new FellowOakDicom.IO.Buffer.MemoryByteBuffer(bytes);
+        }
+
+        /// <summary>Parses a comma-separated frame list string (e.g. <c>"1,3,5"</c>) into an array of
         /// 1-based frame numbers. Throws <see cref="FormatException"/> when any token is
         /// non-numeric, zero, or negative.
         /// </summary>
@@ -493,6 +678,21 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                 _logger.LogError(e, "WADO {Operation} request failed: unhandled exception in provider", operationName);
                 return (TResponse)(IDicomWadoResponse)new DicomWebUnavailableResponse(e.Message);
             }
+        }
+    }
+
+    /// <summary>
+    /// Internal exception used to propagate HTTP status codes and messages during bulk data
+    /// path resolution in <see cref="DicomWebService.ResolveBulkDataElement"/>.
+    /// </summary>
+    internal sealed class DicomBulkDataPathException : Exception
+    {
+        internal int StatusCode { get; }
+
+        internal DicomBulkDataPathException(int statusCode, string message)
+            : base(message)
+        {
+            StatusCode = statusCode;
         }
     }
 }

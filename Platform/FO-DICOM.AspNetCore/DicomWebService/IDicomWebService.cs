@@ -83,5 +83,27 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
         /// (e.g. <c>1</c>, <c>1,3,5</c>).
         /// </summary>
         Task HandleWadoFramesRequestAsync(HttpContext context);
+
+        // ── WADO-RS (Retrieve Bulk Data) ───────────────────────────────────────
+
+        /// <summary>
+        /// Handles a WADO-RS Bulk Data Resources request (PS3.18 Section 10.4.1.1.5).
+        /// Returns the raw bytes of a single bulk data element as a
+        /// <c>multipart/related; type="application/octet-stream"</c> response.
+        /// <list type="bullet">
+        ///   <item><c>GET …/studies/{studyInstanceUID}/series/{seriesInstanceUID}/instances/{sopInstanceUID}/bulk/{**bulkPath}</c></item>
+        /// </list>
+        /// <para>
+        /// The <c>{**bulkPath}</c> catch-all segment identifies the element within the dataset:
+        /// <list type="bullet">
+        ///   <item>Top-level element: <c>7FE00010</c> (8-hex-digit tag)</item>
+        ///   <item>Nested element: <c>{seqTag}/{itemIndex}/{elementTag}</c>
+        ///     (e.g. <c>54000100/0/54001010</c>)</item>
+        /// </list>
+        /// These paths match the URIs embedded in <c>"BulkDataURI"</c> fields of metadata
+        /// responses.
+        /// </para>
+        /// </summary>
+        Task HandleWadoBulkDataRequestAsync(HttpContext context);
     }
 }
