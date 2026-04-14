@@ -309,13 +309,14 @@ namespace FellowOakDicom.Tests.DicomWeb
         }
 
         [FactForNetCore]
-        public async Task MapDicomWebService_PostToStudies_Returns405MethodNotAllowed()
+        public async Task MapDicomWebService_PostToStudies_NoStowProvider_Returns501()
         {
+            // POST /studies is now a valid STOW-RS route; without an IDicomStowProvider it returns 501.
             using var client = BuildTestClient<CapturingDicomWebService>();
 
             var response = await client.PostAsync("/dicomweb/studies", new StringContent(string.Empty));
 
-            Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
+            Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
         }
 
         [FactForNetCore]
@@ -675,6 +676,133 @@ namespace FellowOakDicom.Tests.DicomWeb
                 DicomWadoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
                 => Task.FromResult<IDicomWadoMetadataResponse>(
                     new DicomWadoMetadataResponse(new List<DicomDataset>()));
+        }
+
+        // ── STOW-RS routing ───────────────────────────────────────────────────
+
+        private const string StowBoundary = "stow-routing-boundary";
+
+        private static System.Net.Http.MultipartContent BuildDicomMultipart(params byte[][] dicomParts)
+        {
+            var content = new System.Net.Http.MultipartContent("related", StowBoundary);
+            foreach (var part in dicomParts)
+            {
+                var partContent = new System.Net.Http.ByteArrayContent(part);
+                partContent.Headers.ContentType =
+                    System.Net.Http.Headers.MediaTypeHeaderValue.Parse("application/dicom");
+                content.Add(partContent);
+            }
+            return content;
+        }
+
+        private static byte[] BuildDicomBytes(string studyUid = "1.2.3", string sopInstanceUid = null)
+        {
+            var dataset = new DicomDataset().NotValidated();
+            dataset.Add(DicomTag.StudyInstanceUID, studyUid);
+            dataset.Add(DicomTag.SOPClassUID, DicomUID.CTImageStorage);
+            dataset.Add(DicomTag.SOPInstanceUID, sopInstanceUid ?? DicomUID.Generate().UID);
+            var file = new DicomFile(dataset);
+            var ms = new System.IO.MemoryStream();
+            file.Save(ms);
+            return ms.ToArray();
+        }
+
+        /// <summary>
+        /// STOW provider that stores everything and returns a success response.
+        /// </summary>
+        private class StowOnlyService : DicomWebService, IDicomStowProvider
+        {
+            public Task<IDicomStowResponse> OnStoreInstancesAsync(
+                DicomStowRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+            {
+                var stored = new List<DicomStowInstanceResult>();
+                foreach (var f in request.Instances)
+                    stored.Add(new DicomStowInstanceResult(
+                        f.Dataset.GetSingleValueOrDefault(DicomTag.SOPClassUID, string.Empty),
+                        f.Dataset.GetSingleValueOrDefault(DicomTag.SOPInstanceUID, string.Empty)));
+                return Task.FromResult<IDicomStowResponse>(new DicomStowSuccessResponse(stored));
+            }
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_PostStudies_RoutesToStow_Returns200()
+        {
+            var host = new HostBuilder()
+                .ConfigureWebHost(webHost =>
+                {
+                    webHost.UseTestServer();
+                    webHost.ConfigureServices(services =>
+                    {
+                        services.AddFellowOakDicom();
+                        services.AddRouting();
+                        services.AddSingleton<IDicomWebService>(_ => new StowOnlyService());
+                    });
+                    webHost.Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints => endpoints.MapDicomWebService("/dicomweb"));
+                    });
+                })
+                .Build();
+            host.Start();
+            var client = host.GetTestServer().CreateClient();
+
+            var content = BuildDicomMultipart(BuildDicomBytes());
+            var response = await client.PostAsync("/dicomweb/studies", content);
+
+            Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_PostStudiesWithUid_RoutesToStow_Returns200()
+        {
+            var host = new HostBuilder()
+                .ConfigureWebHost(webHost =>
+                {
+                    webHost.UseTestServer();
+                    webHost.ConfigureServices(services =>
+                    {
+                        services.AddFellowOakDicom();
+                        services.AddRouting();
+                        services.AddSingleton<IDicomWebService>(_ => new StowOnlyService());
+                    });
+                    webHost.Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints => endpoints.MapDicomWebService("/dicomweb"));
+                    });
+                })
+                .Build();
+            host.Start();
+            var client = host.GetTestServer().CreateClient();
+
+            var content = BuildDicomMultipart(BuildDicomBytes(studyUid: "1.2.3"));
+            var response = await client.PostAsync("/dicomweb/studies/1.2.3", content);
+
+            Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_PostStudies_NoProvider_Returns501()
+        {
+            using var client = BuildTestClient<NoProviderDicomWebService>();
+
+            var content = BuildDicomMultipart(BuildDicomBytes());
+            var response = await client.PostAsync("/dicomweb/studies", content);
+
+            Assert.Equal(System.Net.HttpStatusCode.NotImplemented, response.StatusCode);
+        }
+
+        [FactForNetCore]
+        public async Task MapDicomWebService_GetStudies_StillRoutesQido_Returns501ForNoProvider()
+        {
+            // Ensure adding STOW POST routes does not break the GET /studies QIDO route.
+            using var client = BuildTestClient<NoProviderDicomWebService>();
+
+            var response = await client.GetAsync("/dicomweb/studies");
+
+            // NoProviderDicomWebService has no QIDO or STOW provider, so both return 501.
+            Assert.Equal(System.Net.HttpStatusCode.NotImplemented, response.StatusCode);
         }
     }
 }
