@@ -1144,6 +1144,82 @@ namespace FellowOakDicom.SimplePacs.Tests
             Assert.Empty(ctSeriesWithMrFilter);
         }
 
+        // ── QIDO date range filtering ─────────────────────────────────────────
+
+        [Fact]
+        public async Task Qido_StudyDateRange_BothEnds_ReturnsOnlyMatchingStudies()
+        {
+            // Three studies with distinct dates; UIDs must be digits-and-dots only (UI VR)
+            var uid1 = Uid("70.1.1");
+            var uid2 = Uid("70.1.2");
+            var uid3 = Uid("70.1.3");
+
+            await StowAsync(MakeStowContent(MakeDicomBytes(uid1, Uid("70.2.1"), Uid("70.3.1"), studyDate: "20250101")));
+            await StowAsync(MakeStowContent(MakeDicomBytes(uid2, Uid("70.2.2"), Uid("70.3.2"), studyDate: "20250115")));
+            await StowAsync(MakeStowContent(MakeDicomBytes(uid3, Uid("70.2.3"), Uid("70.3.3"), studyDate: "20250201")));
+
+            // Range: 20250110 – 20250120  → only uid2 (20250115)
+            var results = await QidoAsync("/dicomweb/studies?00080020=20250110-20250120");
+
+            Assert.Single(results);
+            Assert.Equal(uid2, GetTag(results[0], DicomTag.StudyInstanceUID));
+        }
+
+        [Fact]
+        public async Task Qido_StudyDateRange_OpenEnd_ReturnsFromDateOnward()
+        {
+            var uid1 = Uid("71.1.1");
+            var uid2 = Uid("71.1.2");
+            var uid3 = Uid("71.1.3");
+
+            await StowAsync(MakeStowContent(MakeDicomBytes(uid1, Uid("71.2.1"), Uid("71.3.1"), studyDate: "20250101")));
+            await StowAsync(MakeStowContent(MakeDicomBytes(uid2, Uid("71.2.2"), Uid("71.3.2"), studyDate: "20250115")));
+            await StowAsync(MakeStowContent(MakeDicomBytes(uid3, Uid("71.2.3"), Uid("71.3.3"), studyDate: "20250201")));
+
+            // Open end: 20250115-  → uid2 and uid3
+            var results = await QidoAsync("/dicomweb/studies?00080020=20250115-");
+
+            var uids = results.Select(r => GetTag(r, DicomTag.StudyInstanceUID)).ToList();
+            Assert.Contains(uid2, uids);
+            Assert.Contains(uid3, uids);
+            Assert.DoesNotContain(uid1, uids);
+        }
+
+        [Fact]
+        public async Task Qido_StudyDateRange_OpenStart_ReturnsUpToDate()
+        {
+            var uid1 = Uid("72.1.1");
+            var uid2 = Uid("72.1.2");
+            var uid3 = Uid("72.1.3");
+
+            await StowAsync(MakeStowContent(MakeDicomBytes(uid1, Uid("72.2.1"), Uid("72.3.1"), studyDate: "20250101")));
+            await StowAsync(MakeStowContent(MakeDicomBytes(uid2, Uid("72.2.2"), Uid("72.3.2"), studyDate: "20250115")));
+            await StowAsync(MakeStowContent(MakeDicomBytes(uid3, Uid("72.2.3"), Uid("72.3.3"), studyDate: "20250201")));
+
+            // Open start: -20250115  → uid1 and uid2
+            var results = await QidoAsync("/dicomweb/studies?00080020=-20250115");
+
+            var uids = results.Select(r => GetTag(r, DicomTag.StudyInstanceUID)).ToList();
+            Assert.Contains(uid1, uids);
+            Assert.Contains(uid2, uids);
+            Assert.DoesNotContain(uid3, uids);
+        }
+
+        [Fact]
+        public async Task Qido_StudyDateExact_ReturnsOnlyExactMatch()
+        {
+            var uid1 = Uid("73.1.1");
+            var uid2 = Uid("73.1.2");
+
+            await StowAsync(MakeStowContent(MakeDicomBytes(uid1, Uid("73.2.1"), Uid("73.3.1"), studyDate: "20250115")));
+            await StowAsync(MakeStowContent(MakeDicomBytes(uid2, Uid("73.2.2"), Uid("73.3.2"), studyDate: "20250116")));
+
+            var results = await QidoAsync("/dicomweb/studies?00080020=20250115");
+
+            Assert.Single(results);
+            Assert.Equal(uid1, GetTag(results[0], DicomTag.StudyInstanceUID));
+        }
+
         // ── Private assertion helpers ─────────────────────────────────────────
 
         private static void AssertTagMatches(

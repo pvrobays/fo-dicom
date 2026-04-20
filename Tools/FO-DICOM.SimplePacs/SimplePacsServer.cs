@@ -274,10 +274,33 @@ namespace FellowOakDicom.SimplePacs
             if (!string.IsNullOrEmpty(accessionFilter))
                 q = ApplyStringFilter(q, r => r.AccessionNumber, accessionFilter);
 
-            // Study Date range filter
-            var studyDateFilter = GetFilterValue(ds, DicomTag.StudyDate);
-            if (!string.IsNullOrEmpty(studyDateFilter))
-                q = ApplyDateFilter(q, r => r.StudyDate, studyDateFilter);
+            // Study Date — may be a DicomDateRange (range query) or a plain string (exact match).
+            // QueryToDicomDatasetMapper stores range syntax (e.g. "20250101-20250115") as a
+            // DicomDateRange object, so GetFilterValue<string> would return null and skip the
+            // filter.  We must read the DicomDateRange directly when present.
+            if (ds.Contains(DicomTag.StudyDate))
+            {
+                var dateRange = ds.GetSingleValueOrDefault<DicomDateRange>(DicomTag.StudyDate, null!);
+                if (dateRange != null)
+                {
+                    if (dateRange.Minimum != DateTime.MinValue)
+                    {
+                        var from = dateRange.Minimum.ToString("yyyyMMdd");
+                        q = q.Where(BuildComparePredicate<StudyRecord>(r => r.StudyDate, from, ">="));
+                    }
+                    if (dateRange.Maximum != DateTime.MaxValue)
+                    {
+                        var to = dateRange.Maximum.ToString("yyyyMMdd");
+                        q = q.Where(BuildComparePredicate<StudyRecord>(r => r.StudyDate, to, "<="));
+                    }
+                }
+                else
+                {
+                    var exactDate = GetFilterValue(ds, DicomTag.StudyDate);
+                    if (!string.IsNullOrEmpty(exactDate))
+                        q = q.Where(BuildEqualsPredicate<StudyRecord>(r => r.StudyDate, exactDate));
+                }
+            }
 
             // Modalities In Study filter — delimiter-aware to avoid "MR" matching "MRI".
             // ModalitiesInStudy is stored as backslash-separated tokens e.g. "CT\MR\PT".
