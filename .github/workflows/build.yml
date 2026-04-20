@@ -20,8 +20,8 @@ jobs:
             { name: Windows-arm, ver: windows-11-arm, runtime: win-arm64 },
             { name: Ubuntu-x64, ver: ubuntu-24.04, runtime: linux-x64 },
             { name: Ubuntu-arm, ver: ubuntu-24.04-arm, runtime: linux-arm64 },
-            { name: macOS-x64, ver: macos-13, runtime: osx-x64 },
-            { name: macOS-arm, ver: macos-14, runtime: osx-arm64 }
+            { name: macOS-x64, ver: macos-15-intel, runtime: osx-x64 },
+            { name: macOS-arm, ver: macos-15, runtime: osx-arm64 }
           ]
         frameworks: [
             { name: ".NET 9.0", common: "net9.0", win: "net9.0-windows", coverage: '' },
@@ -38,17 +38,19 @@ jobs:
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
 
     steps:
-    - uses: actions/checkout@v5
-    - name: Setup .NET 9.0
-      if: ${{ startsWith(matrix.os.name, 'Ubuntu') }}
+    - uses: actions/checkout@v6
+    - name: Setup .NET
+      if: ${{ matrix.frameworks.common != 'net462' }}
       uses: actions/setup-dotnet@v5
       with:
-        dotnet-version: '9.0.x'
+        dotnet-version: ${{ matrix.frameworks.common == 'net8.0' && '8.0.x' || '9.0.x' }}
+      env:
+        DOTNET_INSTALL_ARCH: ${{ contains(matrix.os.runtime, 'arm') && 'arm64' || 'x64' }}
     - name: Test FO-DICOM.Tests
       run: dotnet test ./Tests/FO-DICOM.Tests/FO-DICOM.Tests.csproj --configuration Release --framework ${{ matrix.frameworks.common }} --blame --runtime ${{ matrix.os.runtime }} --logger:"trx;LogFileName=.\results-${{ matrix.os.name }}-${{ matrix.frameworks.common }}.xml" ${{ matrix.frameworks.coverage }}
     - name: Upload test results
       if: success() || failure()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
           name: test-${{ matrix.os.name }}-${{ matrix.frameworks.common }}.xml
           path: ./Tests/FO-DICOM.Tests/TestResults/results-${{ matrix.os.name }}-${{ matrix.frameworks.common }}.xml
@@ -57,7 +59,7 @@ jobs:
       run: dotnet test ./Tests/FO-DICOM.Tests.Windows/FO-DICOM.Tests.Windows.csproj --configuration Release --framework ${{ matrix.frameworks.win }} --blame --runtime ${{ matrix.os.runtime }} --logger:"trx;LogFileName=.\results-${{ matrix.os.runtime }}-${{ matrix.frameworks.common }}.xml" ${{ matrix.frameworks.coverage }}
     - name: Upload test results
       if: ${{ startsWith(matrix.os.name, 'Windows') }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
           name: test.windows-${{ matrix.os.name }}-${{ matrix.frameworks.common }}.xml
           path: ./Tests/FO-DICOM.Tests.Windows/TestResults/results-${{ matrix.os.runtime }}-${{ matrix.frameworks.common }}.xml
@@ -70,13 +72,13 @@ jobs:
   benchmarks:
     runs-on: windows-2022
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: Build FO-DICOM..Benchmark
       run: dotnet build ./Tests/FO-DICOM.Benchmark/FO-DICOM.Benchmark.csproj --configuration Release --framework net8.0
     - name: run benchmarks
       run: ./Tests/FO-DICOM.Benchmark/bin/Release/net8.0/fo-dicom.Benchmark.exe
     - name: Upload benchmark log
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: benchmark
         path: |

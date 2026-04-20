@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2025 fo-dicom contributors.
+﻿// Copyright (c) 2012-2026 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -38,7 +38,7 @@ namespace FellowOakDicom.Imaging
                                   OriginX = 1,
                                   OriginY = 1,
                                   BitsAllocated = 1,
-                                  BitPosition = 1
+                                  BitPosition = 0
                               };
 
             var array = new BitList { Capacity = overlay.Rows * overlay.Columns };

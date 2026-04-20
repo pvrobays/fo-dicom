@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2025 fo-dicom contributors.
+﻿// Copyright (c) 2012-2026 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -6,9 +6,11 @@ using FellowOakDicom.Imaging.Codec;
 using FellowOakDicom.IO;
 using FellowOakDicom.IO.Reader;
 using FellowOakDicom.IO.Writer;
+using FellowOakDicom.Log.Metrics;
 using FellowOakDicom.Memory;
 using FellowOakDicom.Network.Client;
 using FellowOakDicom.Tools;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -78,6 +80,8 @@ namespace FellowOakDicom.Network
 
         private bool _canStillProcessPDataTF;
 
+        private readonly INetworkMetricsCollector _metricsCollector;
+
         #endregion
 
         #region CONSTRUCTORS
@@ -114,6 +118,9 @@ namespace FellowOakDicom.Network
             LoggerFactory = dependencies.LoggerFactory ?? throw new ArgumentNullException(nameof(dependencies.LoggerFactory));
             NetworkManager = dependencies.NetworkManager ?? throw new ArgumentNullException(nameof(dependencies.NetworkManager));
             TranscoderManager = dependencies.TranscoderManager ?? throw new ArgumentNullException(nameof(dependencies.TranscoderManager));
+
+            // tries to get an instance, that can be registered optionally.
+            _metricsCollector = dependencies.ServiceProvider.GetService<INetworkMetricsCollector>();
 
             Options = new DicomServiceOptions();
         }
@@ -221,6 +228,14 @@ namespace FellowOakDicom.Network
         /// The transcoder manager being used by this DICOM service
         /// </summary>
         private ITranscoderManager TranscoderManager { get; }
+
+
+        /// <summary>
+        /// Gets whether the DicomService is running as SCP-Server, or else as a service within a client SCU
+        /// </summary>
+        public bool RunsAsServer { get; internal set; }
+
+        public int LocalPort => _network.LocalPort;
 
         #endregion
 
@@ -439,9 +454,10 @@ namespace FellowOakDicom.Network
                     Logger.LogInformation("{logId} -> {pdu}", LogID, pdu);
                 }
 
+                uint written = 0;
                 try
                 {
-                    await pdu.WriteAsync(_writeStream, CancellationToken.None).ConfigureAwait(false);
+                    written = await pdu.WriteAsync(_writeStream, CancellationToken.None).ConfigureAwait(false);
                     await _writeStream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (IOException e)
@@ -470,11 +486,15 @@ namespace FellowOakDicom.Network
                         _writing = false;
                     }
                 }
+                _metricsCollector?.DataSent(written, this);
             }
         }
 
         private async Task ListenAndProcessPDUAsync()
         {
+            using var activity = _metricsCollector?.Source?.StartActivity((RunsAsServer ? "SCP" : "SCU") + " DicomService");
+            _metricsCollector?.ConnectionEstablished(this);
+
             while (IsConnected)
             {
                 try
@@ -549,6 +569,8 @@ namespace FellowOakDicom.Network
 
                     using var rawPduStream = new MemoryStream(rawPduBuffer.Bytes, 0, rawPduLength);
                     using var raw = new RawPDU(rawPduStream, _memoryProvider);
+
+                    _metricsCollector?.DataReceived(rawPduLength, this);
 
                     switch (raw.Type)
                     {
@@ -679,7 +701,11 @@ namespace FellowOakDicom.Network
                                     LogID,
                                     pdu.Source,
                                     pdu.Reason);
-                                if (this is IDicomService service)
+                                if (this is IAsyncDicomService asyncService)
+                                {
+                                    await asyncService.OnReceiveAbortAsync(pdu.Source, pdu.Reason).ConfigureAwait(false);
+                                }
+                                else if (this is IDicomService service)
                                 {
                                     service.OnReceiveAbort(pdu.Source, pdu.Reason);
                                 }
@@ -1144,9 +1170,7 @@ namespace FellowOakDicom.Network
                         dicomRequest.PendingSince = DateTime.Now;
 
                         // This call should not be awaited because it can only complete when the pending queue is empty
-#pragma warning disable 4014 
                         Task.Factory.StartNew(CheckForTimeouts, TaskCreationOptions.LongRunning).ConfigureAwait(false);
-#pragma warning restore 4014
                     }
                 }
 
@@ -1536,7 +1560,11 @@ namespace FellowOakDicom.Network
                     }
                 }
 
-                if (this is IDicomService dicomService)
+                if (this is IAsyncDicomService asyncDicomService)
+                {
+                    await asyncDicomService.OnConnectionClosedAsync(exception).ConfigureAwait(false);
+                }
+                else if (this is IDicomService dicomService)
                 {
                     dicomService.OnConnectionClosed(exception);
                 }
@@ -1559,6 +1587,7 @@ namespace FellowOakDicom.Network
             }
 
             Logger.LogInformation("Connection closed");
+            _metricsCollector?.ConnectionClosed(this);
 
             if (exception != null)
             {

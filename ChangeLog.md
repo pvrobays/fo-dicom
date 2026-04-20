@@ -1,5 +1,19 @@
-### 5.2.5 (TBD)
+### 5.2.7 (TBD)
 
+### 5.2.6 (2026-03-30)
+- Fix FrameGeometry initialization to handle empty position and orientation arrays (#2067)
+- Add Icon Image Sequence generation for DICOMDIR with IIconGenerator interface (#654)
+- Strong Name fo-dicom.Imaging.ImageSharp and fo-dicom.Imaging.ImageSharp.NetStandard projects
+- Close the tcpClient in cae an exception happens within DicomServer (#1991)
+- Set OverlayBitsPosition to value 0 as defined in dicom standard when transforming an overlay (#2087)
+
+### 5.2.5 (2025-11-16)
+- Add INetoworkMetricsCollector, that is invoked by DicomService, to optionally collect metrics (#2039)
+- Fix issue where creating an instance of ImageData when Pixel Spacing DICOM tags are present but empty causes an exception (#2043)
+- Add support for constructing ImageData/VolumeData from multi-frame datasets (#2015)
+- Added some private tags to dictionary (#2027)
+- Rework disposing and cleanup of finished DICOM Clients in DicomServer (#2046)
+- new interface IAsyncDicomService where OnConnectionClosedAsync and OnAbortAsync are invoked (#2056)
 
 ### 5.2.4 (2025-10-03)
 - Fix issue where DicomFile.Clone did not do a deep-clone as expected (#2025)

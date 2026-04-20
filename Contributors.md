@@ -97,4 +97,7 @@
 * [Arun Mohan Kumar](https://github.com/arunmk-ms)
 * [DMIAOCHEN](https://github.com/DMIAOCHEN)
 * [BrunoMilutin](https://github.com/BrunoMilutin)
+* [Ben Fondu](https://github.com/ben-fondu-envista), Medicim NV
 * [Thomas Sondergaard](https://github.com/tsondergaard)
+* [Jon Kelling](https://github.com/jonkelling)
+* [Abraham Tehrani](https://github.com/atehrani-statrad)

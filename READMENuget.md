@@ -10,7 +10,7 @@ This library is licensed under the [Microsoft Public License (MS-PL)](http://ope
 
 ### Features
 * Targets .NET Standard 2.0
-* DICOM dictionary version 2025d
+* DICOM dictionary version 2026b
 * High-performance, fully asynchronous `async`/`await` API
 * JPEG (including lossless), JPEG-LS, JPEG2000, HTJPEG2000, and RLE image compression (via additional package)
 * Supports very large datasets with content loading on demand
@@ -41,7 +41,9 @@ Package | Description
 [fo-dicom](https://www.nuget.org/packages/fo-dicom/) | Core package containing parser, services and tools.
 [fo-dicom.Imaging.Desktop](https://www.nuget.org/packages/fo-dicom.Imaging.Desktop/) | Library with referencte to System.Drawing, required for rendering into Bitmaps
 [fo-dicom.Imaging.ImageSharp](https://www.nuget.org/packages/fo-dicom.Desktop/) | Library with reference to ImageSharp, can be used for platform independent rendering
+[fo-dicom.Imaging.SkiaSharp](https://www.nuget.org/packages/fo-dicom.Imaging.SkiaSharp/) | Library with reference to SkiaSharp, can be used for platform independent rendering
 [fo-dicom.Codecs](https://www.nuget.org/packages/fo-dicom.Codecs/) | Cross-platform Dicom codecs for fo-dicom, developed by Efferent Health (https://github.com/Efferent-Health/fo-dicom.Codecs)
+[fo-dicom.Instrumentation](https://www.nuget.org/packages/fo-dicom.Instrumentation/) | Library to add instrumentation of fo-dicom via OpenTelemetry
 
 
 ### Documentation

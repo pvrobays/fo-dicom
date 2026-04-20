@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2025 fo-dicom contributors.
+﻿// Copyright (c) 2012-2026 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -74,33 +74,28 @@ namespace FellowOakDicom.Imaging
 
             FrameSize = new Point2(image.GetSingleValueOrDefault<int>(DicomTag.Columns, 0), image.GetSingleValueOrDefault<int>(DicomTag.Rows, 0));
 
-            if (image.Contains(DicomTag.ImagerPixelSpacing))
+            if (image.TryGetValues<double>(DicomTag.ImagerPixelSpacing, out var imagerPixelSpacing) && imagerPixelSpacing.Length == 2)
             {
-                var imagerPixelSpacing = image.GetValues<double>(DicomTag.ImagerPixelSpacing);
                 PixelSpacingBetweenRows = imagerPixelSpacing[0];
                 PixelSpacingBetweenColumns = imagerPixelSpacing[1];
             }
-            else if (image.Contains(DicomTag.PixelSpacing))
+            else if (image.TryGetValues<double>(DicomTag.PixelSpacing, out var pixelSpacing) && pixelSpacing.Length == 2)
             {
-                var pixelSpacing = image.GetValues<double>(DicomTag.PixelSpacing);
                 PixelSpacingBetweenRows = pixelSpacing[0];
                 PixelSpacingBetweenColumns = pixelSpacing[1];
             }
-            else if (image.Contains(DicomTag.NominalScannedPixelSpacing))
+            else if (image.TryGetValues<double>(DicomTag.NominalScannedPixelSpacing, out var nominalPixelSpacing) && nominalPixelSpacing.Length == 2)
             {
-                var nominalPixelSpacing = image.GetValues<double>(DicomTag.NominalScannedPixelSpacing);
                 PixelSpacingBetweenRows = nominalPixelSpacing[0];
                 PixelSpacingBetweenColumns = nominalPixelSpacing[1];
             }
-            else if (functionalItems.Contains(DicomTag.PixelSpacing))
+            else if (functionalItems.TryGetValues<double>(DicomTag.PixelSpacing, out var functionalPixelSpacing) && functionalPixelSpacing.Length == 2)
             {
-                var functionalPixelSpacing = functionalItems.GetValues<double>(DicomTag.PixelSpacing);
                 PixelSpacingBetweenRows = functionalPixelSpacing[0];
                 PixelSpacingBetweenColumns = functionalPixelSpacing[1];
             }
-            else if (functionalItems.Contains(DicomTag.ImagerPixelSpacing))
+            else if (functionalItems.TryGetValues<double>(DicomTag.ImagerPixelSpacing, out var functionalImagerPixelSpacing) && functionalImagerPixelSpacing.Length == 2)
             {
-                var functionalImagerPixelSpacing = functionalItems.GetValues<double>(DicomTag.ImagerPixelSpacing);
                 PixelSpacingBetweenRows = functionalImagerPixelSpacing[0];
                 PixelSpacingBetweenColumns = functionalImagerPixelSpacing[1];
             }
@@ -148,19 +143,25 @@ namespace FellowOakDicom.Imaging
 
         private void InitializeCalcualtedVolumeData(double[] imagePatientPosition, double[] imagePatientOrientation)
         {
-            if (imagePatientPosition.Length == 0 && imagePatientOrientation.Length == 0)
+            if (imagePatientPosition.Length < 3 || imagePatientOrientation.Length < 6)
             {
+                // in case there are no or only incomplete data, then no 3d-initialization can be done
+                // these are the default-values for some 2d-data like CR. they are used for measurements of lengths and angles in 2d, but not for 3d
                 Orientation = FrameOrientation.None;
                 PointTopLeft = new Point3D(0, 0, 0);
                 DirectionRow = new Vector3D(1, 0, 0);
                 DirectionColumn = new Vector3D(0, 1, 0);
+                DirectionNormal = Vector3D.Zero;
+                PointTopRight = PointTopLeft + DirectionRow * PixelSpacingBetweenColumns * FrameSize.X;
+                PointBottomLeft = PointTopLeft + DirectionColumn * PixelSpacingBetweenRows * FrameSize.Y;
+                PointBottomRight = PointBottomLeft + (PointTopRight - PointTopLeft);
+
+                return;
             }
-            else
-            {
-                PointTopLeft = new Point3D(imagePatientPosition);
-                DirectionRow = new Vector3D(imagePatientOrientation, 0);
-                DirectionColumn = new Vector3D(imagePatientOrientation, 3);
-            }
+
+            PointTopLeft = new Point3D(imagePatientPosition);
+            DirectionRow = new Vector3D(imagePatientOrientation, 0);
+            DirectionColumn = new Vector3D(imagePatientOrientation, 3);
 
             DirectionNormal = DirectionRow.CrossProduct(DirectionColumn);
             if (DirectionNormal.IsZero)

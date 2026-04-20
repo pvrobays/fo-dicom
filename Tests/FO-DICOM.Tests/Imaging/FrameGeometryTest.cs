@@ -1,9 +1,10 @@
-﻿// Copyright (c) 2012-2025 fo-dicom contributors.
+﻿// Copyright (c) 2012-2026 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
 using FellowOakDicom.Imaging;
 using FellowOakDicom.Imaging.Mathematics;
+using System.Linq;
 using Xunit;
 
 namespace FellowOakDicom.Tests.Imaging
@@ -236,6 +237,63 @@ namespace FellowOakDicom.Tests.Imaging
             }
         }
 
+
+        [Theory]
+        [InlineData("1,2", 0x0018, 0x1164)] // DicomTag.ImagerPixelSpacing
+        [InlineData("", 0x0018, 0x1164)]    // DicomTag.ImagerPixelSpacing
+        [InlineData("1,2", 0x0028, 0x0030)] // DicomTag.PixelSpacing
+        [InlineData("", 0x0028, 0x0030)]    // DicomTag.PixelSpacing
+        [InlineData("1,2", 0x0018, 0x2010)] // DicomTag.NominalScannedPixelSpacing
+        [InlineData("", 0x0018, 0x2010)]    // DicomTag.NominalScannedPixelSpacing
+        public void FrameGeometry_InstantiatesWithVariousPixelSpacingLengths(string values, ushort group, ushort element)
+        {
+            var pixelSpacingValues = values == "" ? System.Array.Empty<decimal>() : values.Split(',').Select(decimal.Parse).ToArray();
+
+            var dataset = new DicomDataset
+            {
+                { DicomTag.ImagePositionPatient, new decimal[] { 0.0m, 0.0m, 0.0m } },
+                { DicomTag.ImageOrientationPatient, new decimal[] { 1.0m, 0.0m, 0.0m, 0.0m, 1.0m, 0.0m } },
+                { DicomTag.Rows, (ushort)500 },
+                { DicomTag.Columns, (ushort)500 },
+                { new DicomTag(group, element), pixelSpacingValues }
+            };
+
+            var exception = Record.Exception(() => new FrameGeometry(dataset));
+            Assert.Null(exception);
+        }
+
+
+        [Theory]
+        [InlineData("1,2", 0x0028, 0x0030)] // DicomTag.PixelSpacing in functional groups
+        [InlineData("", 0x0028, 0x0030)]    // DicomTag.PixelSpacing in functional groups
+        [InlineData("1,2", 0x0018, 0x1164)] // DicomTag.ImagerPixelSpacing in functional groups
+        [InlineData("", 0x0018, 0x1164)]    // DicomTag.ImagerPixelSpacing in functional groups
+        public void FrameGeometry_InstantiatesWithFunctionalGroupPixelSpacing(string values, ushort group, ushort element)
+        {
+            var pixelSpacingValues = values == "" ? System.Array.Empty<double>() : values.Split(',').Select(double.Parse).ToArray();
+
+            var pixelMeasuresSequenceItem = new DicomDataset { ValidateItems = false };
+            pixelMeasuresSequenceItem.Add(new DicomTag(group, element), pixelSpacingValues);
+
+            var pixelMeasuresSequence = new DicomSequence(DicomTag.PixelMeasuresSequence, pixelMeasuresSequenceItem);
+            var sharedFunctionalGroup = new DicomDataset { ValidateItems = false };
+            sharedFunctionalGroup.Add(pixelMeasuresSequence);
+            var sharedFunctionalGroupsSequence = new DicomSequence(DicomTag.SharedFunctionalGroupsSequence, sharedFunctionalGroup);
+
+            var dataset = new DicomDataset
+            {
+                { DicomTag.ImagePositionPatient, new decimal[] { 0.0m, 0.0m, 0.0m } },
+                { DicomTag.ImageOrientationPatient, new decimal[] { 1.0m, 0.0m, 0.0m, 0.0m, 1.0m, 0.0m } },
+                { DicomTag.Rows, (ushort)500 },
+                { DicomTag.Columns, (ushort)500 },
+                sharedFunctionalGroupsSequence
+            };
+
+            var exception = Record.Exception(() => new FrameGeometry(dataset));
+            Assert.Null(exception);
+        }
+
+
         [Fact]
         public void ThrowWhenTransformingWithoutGeometryData()
         {
@@ -260,6 +318,45 @@ namespace FellowOakDicom.Tests.Imaging
             Assert.IsAssignableFrom<DicomException>(exception);
         }
 
+
+        [Theory]
+        [InlineData(0, 0, false)]  // Both missing
+        [InlineData(1, 0, false)]  // Position has 1 value, orientation missing
+        [InlineData(2, 0, false)]  // Position has 2 values, orientation missing
+        [InlineData(3, 0, false)]  // Position complete, orientation missing
+        [InlineData(0, 3, false)]  // Position missing, orientation has 3 values
+        [InlineData(0, 5, false)]  // Position missing, orientation has 5 values
+        [InlineData(0, 6, false)]  // Position missing, orientation complete
+        [InlineData(3, 3, false)]  // Position complete, orientation has only row direction
+        [InlineData(3, 5, false)]  // Position complete, orientation missing one value for column direction
+        [InlineData(2, 5, false)]  // Both incomplete
+        [InlineData(3, 6, true)]   // complete
+        public void FrameGeometry_HandlesIncompletePositionAndOrientationArrays(int positionLength, int orientationLength, bool valid)
+        {
+            var positionValues = (new decimal[] { 0, 1, 2 }).Take(positionLength).ToArray();
+            var orientationValues = (new decimal[] { 1, 0, 0, 0, 1, 0 }).Take(orientationLength).ToArray();
+
+            var dataset = new DicomDataset { ValidateItems = false };
+            dataset.Add(DicomTag.PixelSpacing, 0.5m, 0.5m);
+            dataset.Add(DicomTag.Rows, (ushort)500);
+            dataset.Add(DicomTag.Columns, (ushort)500);
+
+            dataset.AddOrUpdate(DicomTag.ImagePositionPatient, positionValues);
+            dataset.AddOrUpdate(DicomTag.ImageOrientationPatient, orientationValues);
+
+            FrameGeometry geometry = null;
+            var exception = Record.Exception(() => geometry = new FrameGeometry(dataset));
+            Assert.Null(exception);
+            Assert.NotNull(geometry);
+            if (valid)
+            {
+                Assert.NotEqual(FrameOrientation.None, geometry.Orientation);
+            }
+            else
+            {
+                Assert.Equal(FrameOrientation.None, geometry.Orientation);
+            }
+        }
 
     }
 }

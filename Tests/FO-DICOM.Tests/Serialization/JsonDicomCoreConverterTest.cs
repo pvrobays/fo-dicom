@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2012-2025 fo-dicom contributors.
+﻿// Copyright (c) 2012-2026 fo-dicom contributors.
 // Licensed under the Microsoft Public License (MS-PL).
 #nullable disable
 
@@ -174,10 +174,10 @@ namespace FellowOakDicom.Tests.Serialization
                 }
             });
 
+            var dict = DicomDictionary.Default.ToDictionary(dde => dde.Keyword, dde => dde.Tag);
             var millisecondsPerCallC = TimeCall(100, () =>
             {
-                var dict = DicomDictionary.Default.ToDictionary(dde => dde.Keyword, dde => dde.Tag);
-                foreach (var kw in DicomDictionary.Default.Select(dde => dde.Keyword))
+                foreach (var kw in dict.Keys)
                 {
                     var tag = dict[kw];
                     Assert.NotNull(tag);
