@@ -5,6 +5,7 @@
 using FellowOakDicom.Imaging.Mathematics;
 using System;
 using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace FellowOakDicom
 {
@@ -222,6 +223,54 @@ namespace FellowOakDicom
             {
                 throw new DicomDataException($"Error parsing DICOM tag ['{s}']", e);
             }
+        }
+        
+        /// <summary>
+        /// Parse a DICOM tag from a string that can be either the DICOM Attribute's tag or its keyword.
+        /// </summary>
+        /// <param name="tagOrKeywordString">the DICOM Attribute's tag or its keyword</param>
+        /// <returns>The parsed DicomTag</returns>
+        public static DicomTag ParseByKeywordOrTag(string tagOrKeywordString)
+        {
+            if (Regex.IsMatch(tagOrKeywordString, @"\A\b[0-9a-fA-F]+\b\Z"))
+            {
+                var group = Convert.ToUInt16(tagOrKeywordString.Substring(0, 4), 16);
+                var element = Convert.ToUInt16(tagOrKeywordString.Substring(4), 16);
+                var tag = new DicomTag(group, element);
+                return tag;
+            }
+
+            return DicomDictionary.Default[tagOrKeywordString];
+        }
+        
+        /// <summary>
+        /// Try to parse a DICOM tag from a string that can be either the DICOM Attribute's tag or its keyword.
+        /// </summary>
+        /// <param name="tagOrKeywordString">the DICOM Attribute's tag or its keyword</param>
+        /// <param name="tag">the out parameter which represents the DicomTag. Will be null if the parsing failed</param>
+        /// <returns>Whether the parsing was successful or not</returns>
+        public static bool TryParseByKeywordOrTag(string tagOrKeywordString, out DicomTag tag) {
+            if (string.IsNullOrEmpty(tagOrKeywordString))
+            {
+                tag = null;
+                return false;
+            }
+
+            if (Regex.IsMatch(tagOrKeywordString, @"\A\b[0-9a-fA-F]+\b\Z"))
+            {
+                var group = Convert.ToUInt16(tagOrKeywordString.Substring(0, 4), 16);
+                var element = Convert.ToUInt16(tagOrKeywordString.Substring(4), 16);
+                tag = new DicomTag(group, element);
+                return true;
+            }
+
+            tag = DicomDictionary.Default[tagOrKeywordString];
+            if (tag == null)
+            {
+                return false;
+            }
+
+            return true;
         }
 
     }

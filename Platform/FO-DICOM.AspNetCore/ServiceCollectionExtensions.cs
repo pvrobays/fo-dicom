@@ -3,6 +3,7 @@
 #nullable disable
 
 using FellowOakDicom.AspNetCore.Configs;
+using FellowOakDicom.AspNetCore.DicomWebService;
 using FellowOakDicom.AspNetCore.Server;
 using FellowOakDicom.Network;
 using FellowOakDicom.Network.Client;
@@ -73,6 +74,17 @@ namespace FellowOakDicom.AspNetCore
                 var dicomService = new GeneralPurposeDicomServerService(s.GetRequiredService<IDicomServerFactory>(), builder, s.GetRequiredService<IOptions<ServerConfiguration>>());
                 return dicomService;
             });
+
+        #endregion
+
+        #region Add DicomWebService
+
+        public static IServiceCollection AddDicomWebService<T>(this IServiceCollection services) where T : DicomWebService.DicomWebService
+        {
+            return services
+                .UseFellowOakDicom()
+                .AddSingleton<IDicomWebService, T>();
+        }
 
         #endregion
     }
