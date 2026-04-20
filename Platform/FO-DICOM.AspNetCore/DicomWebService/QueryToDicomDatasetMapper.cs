@@ -116,7 +116,12 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
                             dataset.AddOrUpdate(new DicomSequence(includeTag));
                             continue;
                         }
-                        dataset.AddOrUpdate(includeTag, string.Empty);
+                        // Do NOT overwrite a tag that was already stored as a match parameter
+                        // (e.g. MicroDicom sends ?StudyDate=20260115-&includefield=00080020).
+                        if (!dataset.Contains(includeTag))
+                        {
+                            dataset.AddOrUpdate(includeTag, string.Empty);
+                        }
                     }
 
                     continue;

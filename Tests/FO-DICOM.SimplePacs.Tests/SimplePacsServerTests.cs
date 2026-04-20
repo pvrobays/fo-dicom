@@ -1220,6 +1220,29 @@ namespace FellowOakDicom.SimplePacs.Tests
             Assert.Equal(uid1, GetTag(results[0], DicomTag.StudyInstanceUID));
         }
 
+        [Fact]
+        public async Task Qido_StudyDateRange_WithIncludefieldOnSameTag_ReturnsOnlyMatchingStudies()
+        {
+            // Regression: MicroDicom sends both ?StudyDate=<range> AND includefield=00080020.
+            // The includefield processing must NOT overwrite the match-parameter value with an
+            // empty string, otherwise the date filter is silently lost and all studies are returned.
+            var uid1 = Uid("74.1.1");
+            var uid2 = Uid("74.1.2");
+            var uid3 = Uid("74.1.3");
+
+            await StowAsync(MakeStowContent(MakeDicomBytes(uid1, Uid("74.2.1"), Uid("74.3.1"), studyDate: "20250101")));
+            await StowAsync(MakeStowContent(MakeDicomBytes(uid2, Uid("74.2.2"), Uid("74.3.2"), studyDate: "20250115")));
+            await StowAsync(MakeStowContent(MakeDicomBytes(uid3, Uid("74.2.3"), Uid("74.3.3"), studyDate: "20250201")));
+
+            // Range: 20250110-20250120 → only uid2 (20250115).
+            // includefield=00080020 mirrors MicroDicom's real request pattern.
+            var results = await QidoAsync(
+                "/dicomweb/studies?StudyDate=20250110-20250120&includefield=00080020&includefield=0020000D");
+
+            Assert.Single(results);
+            Assert.Equal(uid2, GetTag(results[0], DicomTag.StudyInstanceUID));
+        }
+
         // ── Private assertion helpers ─────────────────────────────────────────
 
         private static void AssertTagMatches(
