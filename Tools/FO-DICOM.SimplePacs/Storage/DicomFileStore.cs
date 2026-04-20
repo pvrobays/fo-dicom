@@ -48,7 +48,11 @@ namespace FellowOakDicom.SimplePacs.Storage
         internal FileStream? OpenRead(string studyInstanceUid, string sopInstanceUid)
         {
             var path = GetFilePath(studyInstanceUid, sopInstanceUid);
-            if (!File.Exists(path)) return null;
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
             return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
                 bufferSize: 81920, useAsync: true);
         }
@@ -63,7 +67,11 @@ namespace FellowOakDicom.SimplePacs.Storage
             CancellationToken cancellationToken)
         {
             var path = GetFilePath(studyInstanceUid, sopInstanceUid);
-            if (!File.Exists(path)) return null;
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
             return await DicomFile.OpenAsync(path).ConfigureAwait(false);
         }
 
@@ -73,7 +81,10 @@ namespace FellowOakDicom.SimplePacs.Storage
         internal void Delete(string studyInstanceUid, string sopInstanceUid)
         {
             var path = GetFilePath(studyInstanceUid, sopInstanceUid);
-            if (File.Exists(path)) File.Delete(path);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
         }
     }
 }

@@ -137,7 +137,10 @@ namespace FellowOakDicom.SimplePacs
                     // If the file reached disk but the DB commit failed, delete it so
                     // we don't accumulate orphaned files.
                     if (fileSaved)
+                    {
                         try { _fileStore.Delete(studyUid, sopUid); } catch { /* best-effort */ }
+                    }
+
                     // Detach all tracked entities so the next iteration starts with a
                     // clean change tracker — avoids cascading save failures.
                     db.ChangeTracker.Clear();
@@ -160,7 +163,9 @@ namespace FellowOakDicom.SimplePacs
             }
 
             if (failed.Count == 0)
+            {
                 return new DicomStowSuccessResponse(stored);
+            }
 
             return new DicomStowPartialSuccessResponse(stored, failed);
         }
@@ -181,7 +186,10 @@ namespace FellowOakDicom.SimplePacs
             foreach (var f in instances)
             {
                 var uid = f.Dataset.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, (string?)null);
-                if (!string.IsNullOrEmpty(uid)) studyUids.Add(uid);
+                if (!string.IsNullOrEmpty(uid))
+                {
+                    studyUids.Add(uid);
+                }
             }
 
             // Use a fresh context so the query is not affected by the change-tracker
@@ -194,7 +202,10 @@ namespace FellowOakDicom.SimplePacs
                     .Include(s => s.Series)
                     .ThenInclude(sr => sr.Instances)
                     .FirstOrDefaultAsync(s => s.StudyInstanceUid == studyUid, cancellationToken);
-                if (study == null) continue;
+                if (study == null)
+                {
+                    continue;
+                }
 
                 study.NumberOfStudyRelatedSeries    = study.Series.Count;
                 study.NumberOfStudyRelatedInstances = study.Series.Sum(sr => sr.Instances.Count);
@@ -210,7 +221,9 @@ namespace FellowOakDicom.SimplePacs
                     : null;
 
                 foreach (var s in study.Series)
+                {
                     s.NumberOfSeriesRelatedInstances = s.Instances.Count;
+                }
             }
 
             await db.SaveChangesAsync(cancellationToken);
@@ -257,22 +270,30 @@ namespace FellowOakDicom.SimplePacs
             // Study Instance UID filter (exact or list)
             var studyUidFilter = GetFilterValue(ds, DicomTag.StudyInstanceUID);
             if (!string.IsNullOrEmpty(studyUidFilter))
+            {
                 q = ApplyUidFilter(q, r => r.StudyInstanceUid, studyUidFilter);
+            }
 
             // Patient ID filter
             var patientIdFilter = GetFilterValue(ds, DicomTag.PatientID);
             if (!string.IsNullOrEmpty(patientIdFilter))
+            {
                 q = ApplyStringFilter(q, r => r.PatientId, patientIdFilter);
+            }
 
             // Patient Name filter (wildcard supported)
             var patientNameFilter = GetFilterValue(ds, DicomTag.PatientName);
             if (!string.IsNullOrEmpty(patientNameFilter))
+            {
                 q = ApplyStringFilter(q, r => r.PatientName, patientNameFilter);
+            }
 
             // Accession Number filter
             var accessionFilter = GetFilterValue(ds, DicomTag.AccessionNumber);
             if (!string.IsNullOrEmpty(accessionFilter))
+            {
                 q = ApplyStringFilter(q, r => r.AccessionNumber, accessionFilter);
+            }
 
             // Study Date — may be a DicomDateRange (range query) or a plain string (exact match).
             // QueryToDicomDatasetMapper stores range syntax (e.g. "20250101-20250115") as a
@@ -298,7 +319,9 @@ namespace FellowOakDicom.SimplePacs
                 {
                     var exactDate = GetFilterValue(ds, DicomTag.StudyDate);
                     if (!string.IsNullOrEmpty(exactDate))
+                    {
                         q = q.Where(BuildEqualsPredicate<StudyRecord>(r => r.StudyDate, exactDate));
+                    }
                 }
             }
 
@@ -308,19 +331,30 @@ namespace FellowOakDicom.SimplePacs
             // or in the middle — all delimited by backslashes.
             var modalityFilter = GetFilterValue(ds, DicomTag.ModalitiesInStudy);
             if (!string.IsNullOrEmpty(modalityFilter))
+            {
                 q = q.Where(r => r.ModalitiesInStudy != null && (
                     r.ModalitiesInStudy == modalityFilter ||
                     EF.Functions.Like(r.ModalitiesInStudy, modalityFilter + @"\%") ||
                     EF.Functions.Like(r.ModalitiesInStudy, @"%\" + modalityFilter) ||
                     EF.Functions.Like(r.ModalitiesInStudy, @"%\" + modalityFilter + @"\%")));
+            }
 
             // Pagination
-            if (request.Options.Offset > 0) q = q.Skip(request.Options.Offset);
-            if (request.Options.Limit > 0)  q = q.Take(request.Options.Limit);
+            if (request.Options.Offset > 0)
+            {
+                q = q.Skip(request.Options.Offset);
+            }
+
+            if (request.Options.Limit > 0)
+            {
+                q = q.Take(request.Options.Limit);
+            }
 
             var results = await q.ToListAsync(cancellationToken);
             foreach (var row in results)
+            {
                 response.AddResult(BuildStudyDataset(row));
+            }
         }
 
         private static DicomDataset BuildStudyDataset(StudyRecord row)
@@ -357,32 +391,50 @@ namespace FellowOakDicom.SimplePacs
             // Study Instance UID scope (from route or query param)
             var studyUidFilter = GetFilterValue(ds, DicomTag.StudyInstanceUID);
             if (!string.IsNullOrEmpty(studyUidFilter))
+            {
                 q = q.Where(r => r.Study != null && r.Study.StudyInstanceUid == studyUidFilter);
+            }
 
             // Series Instance UID filter
             var seriesUidFilter = GetFilterValue(ds, DicomTag.SeriesInstanceUID);
             if (!string.IsNullOrEmpty(seriesUidFilter))
+            {
                 q = ApplyUidFilter(q, r => r.SeriesInstanceUid, seriesUidFilter);
+            }
 
             // Modality filter
             var modalityFilter = GetFilterValue(ds, DicomTag.Modality);
             if (!string.IsNullOrEmpty(modalityFilter))
+            {
                 q = ApplyStringFilter(q, r => r.Modality, modalityFilter);
+            }
 
             // Pagination
-            if (request.Options.Offset > 0) q = q.Skip(request.Options.Offset);
-            if (request.Options.Limit > 0)  q = q.Take(request.Options.Limit);
+            if (request.Options.Offset > 0)
+            {
+                q = q.Skip(request.Options.Offset);
+            }
+
+            if (request.Options.Limit > 0)
+            {
+                q = q.Take(request.Options.Limit);
+            }
 
             var results = await q.Include(r => r.Study).ToListAsync(cancellationToken);
             foreach (var row in results)
+            {
                 response.AddResult(BuildSeriesDataset(row));
+            }
         }
 
         private static DicomDataset BuildSeriesDataset(SeriesRecord row)
         {
             var result = new DicomDataset().NotValidated();
             if (row.Study != null)
+            {
                 result.Add(DicomTag.StudyInstanceUID, row.Study.StudyInstanceUid);
+            }
+
             result.Add(DicomTag.SeriesInstanceUID,              row.SeriesInstanceUid);
             result.Add(DicomTag.Modality,                       row.Modality ?? string.Empty);
             result.Add(DicomTag.SeriesDescription,              row.SeriesDescription ?? string.Empty);
@@ -406,27 +458,42 @@ namespace FellowOakDicom.SimplePacs
             // Study Instance UID scope
             var studyUidFilter = GetFilterValue(ds, DicomTag.StudyInstanceUID);
             if (!string.IsNullOrEmpty(studyUidFilter))
+            {
                 q = q.Where(r => r.Series != null && r.Series.Study != null &&
                                  r.Series.Study.StudyInstanceUid == studyUidFilter);
+            }
 
             // Series Instance UID scope
             var seriesUidFilter = GetFilterValue(ds, DicomTag.SeriesInstanceUID);
             if (!string.IsNullOrEmpty(seriesUidFilter))
+            {
                 q = q.Where(r => r.Series != null && r.Series.SeriesInstanceUid == seriesUidFilter);
+            }
 
             // SOP Instance UID filter
             var sopUidFilter = GetFilterValue(ds, DicomTag.SOPInstanceUID);
             if (!string.IsNullOrEmpty(sopUidFilter))
+            {
                 q = ApplyUidFilter(q, r => r.SopInstanceUid, sopUidFilter);
+            }
 
             // SOP Class UID filter
             var sopClassFilter = GetFilterValue(ds, DicomTag.SOPClassUID);
             if (!string.IsNullOrEmpty(sopClassFilter))
+            {
                 q = ApplyUidFilter(q, r => r.SopClassUid, sopClassFilter);
+            }
 
             // Pagination
-            if (request.Options.Offset > 0) q = q.Skip(request.Options.Offset);
-            if (request.Options.Limit > 0)  q = q.Take(request.Options.Limit);
+            if (request.Options.Offset > 0)
+            {
+                q = q.Skip(request.Options.Offset);
+            }
+
+            if (request.Options.Limit > 0)
+            {
+                q = q.Take(request.Options.Limit);
+            }
 
             var results = await q
                 .Include(r => r.Series)
@@ -434,16 +501,24 @@ namespace FellowOakDicom.SimplePacs
                 .ToListAsync(cancellationToken);
 
             foreach (var row in results)
+            {
                 response.AddResult(BuildInstanceDataset(row));
+            }
         }
 
         private static DicomDataset BuildInstanceDataset(InstanceRecord row)
         {
             var result = new DicomDataset().NotValidated();
             if (row.Series?.Study != null)
+            {
                 result.Add(DicomTag.StudyInstanceUID,  row.Series.Study.StudyInstanceUid);
+            }
+
             if (row.Series != null)
+            {
                 result.Add(DicomTag.SeriesInstanceUID, row.Series.SeriesInstanceUid);
+            }
+
             result.Add(DicomTag.SOPInstanceUID,        row.SopInstanceUid);
             result.Add(DicomTag.SOPClassUID,           row.SopClassUid ?? string.Empty);
             result.Add(DicomTag.InstanceNumber,        row.InstanceNumber?.ToString() ?? string.Empty);
@@ -459,7 +534,11 @@ namespace FellowOakDicom.SimplePacs
         /// </summary>
         private static string? GetFilterValue(DicomDataset ds, DicomTag tag)
         {
-            if (!ds.Contains(tag)) return null;
+            if (!ds.Contains(tag))
+            {
+                return null;
+            }
+
             var val = ds.GetSingleValueOrDefault(tag, (string?)null);
             return string.IsNullOrEmpty(val) ? null : val;
         }
@@ -495,7 +574,9 @@ namespace FellowOakDicom.SimplePacs
         {
             var uids = filterValue.Split(',', StringSplitOptions.RemoveEmptyEntries);
             if (uids.Length == 1)
+            {
                 return q.Where(BuildEqualsPredicate<T>(selector, uids[0].Trim()));
+            }
 
             var trimmed = uids.Select(u => u.Trim()).ToList();
             // EF Core translates Contains to SQL IN.
@@ -612,7 +693,9 @@ namespace FellowOakDicom.SimplePacs
             var instances = await GetMatchingInstancesAsync(db, request, cancellationToken);
 
             if (instances.Count == 0)
+            {
                 return new DicomWebNotFoundResponse();
+            }
 
             // Load each file fully into memory so the underlying FileStream is closed
             // before we return, preventing file-locking issues during cleanup.
@@ -620,14 +703,24 @@ namespace FellowOakDicom.SimplePacs
             foreach (var inst in instances)
             {
                 var studyUid = inst.Series?.Study?.StudyInstanceUid;
-                if (studyUid == null) continue;
+                if (studyUid == null)
+                {
+                    continue;
+                }
+
                 var file = await _fileStore.LoadAsync(studyUid, inst.SopInstanceUid, cancellationToken);
-                if (file == null) continue;
+                if (file == null)
+                {
+                    continue;
+                }
+
                 fileList.Add(file);
             }
 
             if (fileList.Count == 0)
+            {
                 return new DicomWebNotFoundResponse();
+            }
 
             return new DicomWadoInstancesResponse(fileList);
         }
@@ -642,20 +735,32 @@ namespace FellowOakDicom.SimplePacs
             var instances = await GetMatchingInstancesAsync(db, request, cancellationToken);
 
             if (instances.Count == 0)
+            {
                 return new DicomWebNotFoundResponse();
+            }
 
             var datasets = new List<DicomDataset>();
             foreach (var inst in instances)
             {
                 var studyUid = inst.Series?.Study?.StudyInstanceUid;
-                if (studyUid == null) continue;
+                if (studyUid == null)
+                {
+                    continue;
+                }
+
                 var file = await _fileStore.LoadAsync(studyUid, inst.SopInstanceUid, cancellationToken);
-                if (file == null) continue;
+                if (file == null)
+                {
+                    continue;
+                }
+
                 datasets.Add(file.Dataset);
             }
 
             if (datasets.Count == 0)
+            {
                 return new DicomWebNotFoundResponse();
+            }
 
             return new DicomWadoMetadataResponse(datasets);
         }
@@ -678,11 +783,15 @@ namespace FellowOakDicom.SimplePacs
                              i.Series.Study.StudyInstanceUid == request.StudyInstanceUid);
 
             if (request.SeriesInstanceUid != null)
+            {
                 q = q.Where(i => i.Series != null &&
                                  i.Series.SeriesInstanceUid == request.SeriesInstanceUid);
+            }
 
             if (request.SopInstanceUid != null)
+            {
                 q = q.Where(i => i.SopInstanceUid == request.SopInstanceUid);
+            }
 
             return await q.ToListAsync(cancellationToken);
         }
