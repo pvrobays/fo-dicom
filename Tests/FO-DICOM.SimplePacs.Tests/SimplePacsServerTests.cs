@@ -61,7 +61,7 @@ namespace FellowOakDicom.SimplePacs.Tests
             _host = new HostBuilder()
                 .ConfigureWebHost(web =>
                 {
-                    web.UseTestServer(opts => opts.AllowSynchronousIO = true);
+                    web.UseTestServer();
                     web.ConfigureServices(services =>
                     {
                         services.AddFellowOakDicom();

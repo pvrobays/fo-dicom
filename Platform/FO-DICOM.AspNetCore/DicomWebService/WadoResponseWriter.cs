@@ -5,6 +5,7 @@ using FellowOakDicom.AspNetCore;
 using FellowOakDicom.DicomWeb;
 using FellowOakDicom.Imaging.Codec;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -542,6 +543,28 @@ namespace FellowOakDicom.AspNetCore.DicomWebService
             DicomTransferSyntax? transferSyntax,
             CancellationToken cancellationToken)
         {
+            // DicomFile.SaveAsync ultimately calls StreamByteTarget.Write(ushort/byte/uint) via
+            // DicomWriter.WriteTagHeader, which uses BinaryWriter.Write — a synchronous stream
+            // write.  Kestrel (and ASP.NET TestHost) disallow synchronous writes on the response
+            // stream by default to prevent thread-pool starvation.
+            //
+            // We opt-in per-request rather than globally (AllowSynchronousIO on KestrelServerOptions
+            // or via IOptions<KestrelServerOptions>) so that only WADO-RS instance-retrieval
+            // responses — the only path that serialises full DICOM Part 10 files directly to the
+            // response body — carry the relaxed setting.  All other DICOMweb endpoints (QIDO-RS,
+            // STOW-RS, metadata, frames, bulk data) write JSON or raw byte buffers and are
+            // unaffected.
+            //
+            // The correct long-term fix would be a fully-async IByteTarget / DicomWriter pipeline
+            // in fo-dicom core, but that is a large breaking change.  The per-request opt-in is
+            // the standard ASP.NET Core pattern for interoperating with sync-IO libraries
+            // (e.g. System.Drawing, Aspose, and similar) without penalising the whole server.
+            var syncFeature = context.Features.Get<IHttpBodyControlFeature>();
+            if (syncFeature != null)
+            {
+                syncFeature.AllowSynchronousIO = true;
+            }
+
             var boundary = $"----dicom-boundary-{Guid.NewGuid():N}";
             context.Response.StatusCode = StatusCodes.Status200OK;
             context.Response.ContentType =
